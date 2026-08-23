@@ -1,0 +1,11 @@
+# wrangler local state
+.wrangler/
+
+# pipeline data artifacts (source data is re-downloadable; tiles live in R2)
+pipeline/work/fgdb/
+pipeline/work/shp/
+*.pmtiles
+*.geojsonl
+*.duckdb
+*.zip
+.DS_Store

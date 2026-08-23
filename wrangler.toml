@@ -1,0 +1,20 @@
+name = "texas-parcel-map"
+main = "worker/index.js"
+compatibility_date = "2026-08-01"
+
+# Custom domain (registered via Cloudflare Registrar on this account)
+routes = [
+  { pattern = "dirtfound.com", custom_domain = true },
+  { pattern = "www.dirtfound.com", custom_domain = true },
+]
+
+# Static frontend (vanilla JS, no build step)
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# R2 bucket holding the PMTiles archive(s), served at /tiles/<file>.
+# Create it with:  npx wrangler r2 bucket create parcel-data
+[[r2_buckets]]
+binding = "TILES"
+bucket_name = "parcel-data"

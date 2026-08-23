@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Texas Parcel Ownership — 13.5M parcels</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="map"></div>
+
+  <header class="panel title-card">
+    <h1>Texas Parcel Ownership</h1>
+    <p>Find absentee-owned parcels — owners whose mailing address doesn't match
+    the property. Zoom out for county stats; zoom in past level 10 for individual
+    parcels (Travis County / Austin for now). Click a parcel for the owner's
+    name and mailing address.</p>
+  </header>
+
+  <div class="panel legend" id="legend-counties">
+    <h2>Share of out-of-state owners</h2>
+    <div class="gradient"></div>
+    <div class="gradient-labels"><span>0%</span><span>40%+</span></div>
+  </div>
+
+  <div class="panel legend hidden" id="legend-parcels">
+    <h2>Parcel ownership</h2>
+    <ul>
+      <li><span class="swatch" style="background:#dc2626"></span>Absentee — out-of-state</li>
+      <li><span class="swatch" style="background:#ea580c"></span>Absentee — in-state</li>
+      <li><span class="swatch" style="background:#3b5bdb"></span>Local owner</li>
+      <li><span class="swatch" style="background:#94a3b8"></span>Unknown</li>
+    </ul>
+    <label class="filter-toggle">
+      <input type="checkbox" id="absentee-only" />
+      Absentee owners only
+    </label>
+  </div>
+
+  <div class="panel credits">
+    Data: <a href="https://tnris.org/stratmap/land-parcels/" target="_blank" rel="noopener">TxGIO 2025 Statewide Land Parcels</a>
+    · Workflow by <a href="https://walker-data.com/posts/millions-of-parcels" target="_blank" rel="noopener">Kyle Walker</a>
+    · Basemap © <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> / OpenStreetMap
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@4.4.0/dist/pmtiles.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

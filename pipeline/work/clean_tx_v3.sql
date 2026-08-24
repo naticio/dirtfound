@@ -11,7 +11,10 @@ CREATE OR REPLACE TABLE prepped AS
 SELECT
   Shape,
   Prop_ID,
-  nullif(trim(OWNER_NAME), '') AS owner,
+  -- Couples are split across OWNER_NAME ('SALAZAR DANIEL &') and NAME_CARE
+  -- ('ELIZABETH LYNCH'); merge them into one owner string.
+  nullif(trim(trim(OWNER_NAME) ||
+    CASE WHEN trim(NAME_CARE) != '' THEN ' ' || trim(NAME_CARE) ELSE '' END), '') AS owner,
   nullif(MKT_VALUE, 0) AS value,
   upper(trim(MAIL_STAT)) AS st,
   regexp_extract(upper(MAIL_CITY), ',\s*([A-Z]{2})\s*$', 1) AS city_st,

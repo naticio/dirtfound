@@ -477,7 +477,7 @@
     }
     clearSearchResults();
     if (!results.length) {
-      countEl.textContent = `no owner matching “${q}” anywhere in the data`;
+      countEl.textContent = `no owner or address matching “${q}” in the data`;
       return;
     }
 
@@ -510,7 +510,7 @@
       new maplibregl.LngLatBounds(features[0].geometry.coordinates, features[0].geometry.coordinates)
     );
     map.fitBounds(bounds, { padding: 90, maxZoom: 15 });
-    countEl.textContent = `${fmtInt.format(features.length)} parcels owned by “${q}” — green pins`;
+    countEl.textContent = `${fmtInt.format(features.length)} matches for “${q}” — green pins`;
   }
 
   function searchResultPopupHTML(p) {

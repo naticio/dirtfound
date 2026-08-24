@@ -272,6 +272,7 @@
     map.on("click", (e) => {
       // Violations sit on top, then parcels, then counties when zoomed out.
       let html = null;
+      let annotateWith = null;
       if (map.getLayer("search-results")) {
         const s = map.queryRenderedFeatures(e.point, { layers: ["search-results"] });
         if (s.length) { html = searchResultPopupHTML(s[0].properties); annotateWith = s[0].properties.addr; }
@@ -284,7 +285,6 @@
         const v = map.queryRenderedFeatures(e.point, { layers: ["violations"] });
         if (v.length) html = violationPopupHTML(v[0].properties);
       }
-      let annotateWith = null;
       const parcels = html ? [] : map.queryRenderedFeatures(e.point, { layers: ["parcels"] });
       if (parcels.length) {
         html = parcelPopupHTML(parcels[0].properties);
@@ -592,6 +592,20 @@
     );
     map.fitBounds(bounds, { padding: 90, maxZoom: 15 });
     countEl.textContent = `${fmtInt.format(features.length)} matches for “${q}” — green pins`;
+
+    // Single match: open its details right away instead of waiting for a click.
+    if (features.length === 1) {
+      const f = features[0];
+      map.once("moveend", () => {
+        const html = searchResultPopupHTML(f.properties);
+        const popup = new maplibregl.Popup({ maxWidth: "320px" })
+          .setLngLat(f.geometry.coordinates)
+          .setHTML(html)
+          .addTo(map);
+        annotatePopup(popup, { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] },
+          f.properties.addr, html);
+      });
+    }
   }
 
   function searchResultPopupHTML(p) {

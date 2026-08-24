@@ -278,3 +278,13 @@ html, body {
 }
 
 .popup-actions a:hover { text-decoration: underline; }
+
+.popup-badges {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  padding: 6px 9px;
+  margin-bottom: 9px;
+  font-weight: 600;
+  line-height: 1.5;
+}

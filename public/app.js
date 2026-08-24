@@ -183,6 +183,53 @@
     });
   });
 
+
+  // ---- Shared datasets for popup badges (lazy, fetched once) ------------
+  let violationsPromise = null, taxSalesPromise = null;
+  const getViolationsData = () =>
+    (violationsPromise ??= fetch("/api/violations").then((r) => r.json()));
+  const getTaxSalesData = () =>
+    (taxSalesPromise ??= fetch("/api/taxsales").then((r) => r.json()));
+
+  const normAddr = (a) =>
+    String(a || "").toUpperCase().split(",")[0].replace(/\s+/g, " ").trim();
+
+  function distMeters(lngLat, coords) {
+    const dx = (coords[0] - lngLat.lng) * 111320 * Math.cos(lngLat.lat * Math.PI / 180);
+    const dy = (coords[1] - lngLat.lat) * 110540;
+    return Math.hypot(dx, dy);
+  }
+
+  // Stamp tax-sale / violation warnings onto an open popup for this property.
+  async function annotatePopup(popup, lngLat, addrStr, baseHTML) {
+    try {
+      busy(true);
+      const [v, t] = await Promise.all([getViolationsData(), getTaxSalesData()]);
+      const key = normAddr(addrStr);
+      const hit = (f) =>
+        (key && normAddr(f.properties.address) === key) ||
+        distMeters(lngLat, f.geometry.coordinates) < 60;
+      const sales = t.features.filter(hit);
+      const viols = v.features.filter(hit);
+      if (!sales.length && !viols.length) return;
+      const b = [];
+      if (sales.length) {
+        const sp = sales[0].properties;
+        b.push(`\u{1F4B0} ${esc(sp.type || "Tax sale")}${sp.min_bid ? " \u2014 min bid " + fmtUSD.format(sp.min_bid) : ""}${sp.sale_date ? " \u00b7 " + esc(sp.sale_date) : ""}`);
+      }
+      if (viols.length) {
+        b.push(`\u26A0\uFE0F ${viols.length} open code case${viols.length > 1 ? "s" : ""} \u2014 ${esc(viols[0].properties.desc)}`);
+      }
+      if (popup.isOpen()) {
+        popup.setHTML(`<div class="popup-badges">${b.join("<br>")}</div>` + baseHTML);
+      }
+    } catch (err) {
+      /* badges are best-effort */
+    } finally {
+      busy(false);
+    }
+  }
+
   const STATUS_LABELS = {
     "Out-of-state": "🔴 Absentee — out-of-state owner",
     "Out-of-state owner": "🔴 Out-of-state owner",
@@ -227,7 +274,7 @@
       let html = null;
       if (map.getLayer("search-results")) {
         const s = map.queryRenderedFeatures(e.point, { layers: ["search-results"] });
-        if (s.length) html = searchResultPopupHTML(s[0].properties);
+        if (s.length) { html = searchResultPopupHTML(s[0].properties); annotateWith = s[0].properties.addr; }
       }
       if (!html && map.getLayer("taxsales")) {
         const t = map.queryRenderedFeatures(e.point, { layers: ["taxsales"] });
@@ -237,18 +284,21 @@
         const v = map.queryRenderedFeatures(e.point, { layers: ["violations"] });
         if (v.length) html = violationPopupHTML(v[0].properties);
       }
+      let annotateWith = null;
       const parcels = html ? [] : map.queryRenderedFeatures(e.point, { layers: ["parcels"] });
       if (parcels.length) {
         html = parcelPopupHTML(parcels[0].properties);
+        annotateWith = parcels[0].properties.situs_addr;
       } else {
         const counties = map.queryRenderedFeatures(e.point, { layers: ["counties-fill"] });
         if (counties.length) html = countyPopupHTML(counties[0].properties);
       }
       if (html) {
-        new maplibregl.Popup({ maxWidth: "320px" })
+        const popup = new maplibregl.Popup({ maxWidth: "320px" })
           .setLngLat(e.lngLat)
           .setHTML(html)
           .addTo(map);
+        if (annotateWith !== null) annotatePopup(popup, e.lngLat, annotateWith, html);
       }
     });
   }

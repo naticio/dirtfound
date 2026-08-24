@@ -172,7 +172,11 @@
     map.on("click", (e) => {
       // Violations sit on top, then parcels, then counties when zoomed out.
       let html = null;
-      if (map.getLayer("taxsales")) {
+      if (map.getLayer("search-results")) {
+        const s = map.queryRenderedFeatures(e.point, { layers: ["search-results"] });
+        if (s.length) html = searchResultPopupHTML(s[0].properties);
+      }
+      if (!html && map.getLayer("taxsales")) {
         const t = map.queryRenderedFeatures(e.point, { layers: ["taxsales"] });
         if (t.length) html = taxSalePopupHTML(t[0].properties);
       }
@@ -393,15 +397,22 @@
       applyFilters();
     });
 
-    // Owner name search (debounced)
+    // Owner name box: typing filters the current view; Enter searches everywhere.
+    const searchBox = document.getElementById("owner-search");
     let searchTimer = null;
-    document.getElementById("owner-search").addEventListener("input", (e) => {
+    searchBox.addEventListener("input", (e) => {
       e.target.classList.toggle("active", e.target.value.trim() !== "");
+      if (e.target.value.trim() === "") clearSearchResults();
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => {
         filterState.query = e.target.value.trim();
         applyFilters();
       }, 300);
+    });
+    searchBox.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") searchEverywhere(searchBox.value.trim());
+      if (e.key === "Escape") { searchBox.value = ""; searchBox.classList.remove("active");
+        filterState.query = ""; clearSearchResults(); applyFilters(); }
     });
 
     document.getElementById("export-csv").addEventListener("click", exportCSV);
@@ -409,6 +420,73 @@
     map.on("moveend", scheduleCount);
     map.on("idle", scheduleCount);
     scheduleCount();
+  }
+
+  // ---- Global owner search (Enter in the owner box → /api/search) -------
+
+  function clearSearchResults() {
+    if (map.getLayer("search-results")) map.removeLayer("search-results");
+    if (map.getSource("search-results")) map.removeSource("search-results");
+  }
+
+  async function searchEverywhere(q) {
+    const countEl = document.getElementById("result-count");
+    if (q.length < 2) return;
+    countEl.textContent = "searching everywhere…";
+    let results;
+    try {
+      const res = await fetch("/api/search?q=" + encodeURIComponent(q));
+      results = (await res.json()).results || [];
+    } catch (err) {
+      countEl.textContent = "search failed — try again";
+      return;
+    }
+    clearSearchResults();
+    if (!results.length) {
+      countEl.textContent = `no owner matching “${q}” anywhere in the data`;
+      return;
+    }
+
+    const features = results
+      .filter((r) => isFinite(r.lon) && isFinite(r.lat))
+      .map((r) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [r.lon, r.lat] },
+        properties: r,
+      }));
+    map.addSource("search-results", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features },
+    });
+    map.addLayer({
+      id: "search-results",
+      type: "circle",
+      source: "search-results",
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 5, 14, 10],
+        "circle-color": "#16a34a",
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 2,
+        "circle-opacity": 0.95,
+      },
+    });
+
+    const bounds = features.reduce(
+      (b, f) => b.extend(f.geometry.coordinates),
+      new maplibregl.LngLatBounds(features[0].geometry.coordinates, features[0].geometry.coordinates)
+    );
+    map.fitBounds(bounds, { padding: 90, maxZoom: 15 });
+    countEl.textContent = `${fmtInt.format(features.length)} parcels owned by “${q}” — green pins`;
+  }
+
+  function searchResultPopupHTML(p) {
+    return [
+      `<strong>${esc(p.name)}</strong>`,
+      STATUS_LABELS[p.status] || null,
+      blank(p.addr) ? null : `Property: ${esc(p.addr)}`,
+      `${esc(p.county)} County`,
+      p.value ? `Total value: ${fmtUSD.format(p.value)}` : null,
+    ].filter(Boolean).join("<br>");
   }
 
   // ---- Code violations layer (Austin open data via /api/violations) ----

@@ -29,6 +29,9 @@ export default {
     if (url.pathname === "/api/taxsales") {
       return handleTaxSales(request, ctx, url);
     }
+    if (url.pathname === "/api/search") {
+      return handleSearch(request, env, url);
+    }
     return env.ASSETS.fetch(request);
   },
 };
@@ -120,6 +123,34 @@ async function handleViolations(request, ctx, url) {
   );
   ctx.waitUntil(cache.put(cacheKey, response.clone()));
   return response;
+}
+
+// Owner-name search over all parcels (D1 + FTS5). Word-prefix matching:
+// "nativ smith" finds names containing a word starting with each term.
+async function handleSearch(request, env, url) {
+  const q = (url.searchParams.get("q") || "").trim();
+  if (q.length < 2) {
+    return withCors(new Response(JSON.stringify({ results: [] }), {
+      headers: { "Content-Type": "application/json" },
+    }));
+  }
+  // Build an FTS5 query: quoted word prefixes, AND-ed. Strip FTS metacharacters.
+  const terms = q.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean).slice(0, 6);
+  if (!terms.length) {
+    return withCors(new Response(JSON.stringify({ results: [] }), {
+      headers: { "Content-Type": "application/json" },
+    }));
+  }
+  const match = terms.map((t) => `"${t}"*`).join(" ");
+  const stmt = env.OWNERS.prepare(
+    `SELECT o.name, o.status, o.addr, o.county, o.value, o.lon, o.lat
+     FROM owners_fts f JOIN owners o ON o.id = f.rowid
+     WHERE owners_fts MATCH ? LIMIT 500`
+  ).bind(match);
+  const { results } = await stmt.all();
+  return withCors(new Response(JSON.stringify({ results }), {
+    headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" },
+  }));
 }
 
 // Texas tax-foreclosure sale properties from LGBS (the delinquent-tax law firm

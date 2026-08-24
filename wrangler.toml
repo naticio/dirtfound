@@ -18,3 +18,9 @@ binding = "ASSETS"
 [[r2_buckets]]
 binding = "TILES"
 bucket_name = "parcel-data"
+
+# Owner search index (all parcels, FTS5 on owner names), served at /api/search
+[[d1_databases]]
+binding = "OWNERS"
+database_name = "dirtfound-owners"
+database_id = "d56d9f2b-15ab-47a1-a1c2-a30c008b30d5"

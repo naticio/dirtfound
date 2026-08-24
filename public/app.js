@@ -130,6 +130,17 @@
 
   const blank = (v) => v === undefined || v === null || String(v).trim() === "";
 
+  // ---- Busy indicator (slim bar under the filter bar) -------------------
+  let busyCount = 0;
+  function busy(on) {
+    busyCount = Math.max(0, busyCount + (on ? 1 : -1));
+    document.getElementById("progress").classList.toggle("hidden", busyCount === 0);
+  }
+  // Show while the map is pulling tiles; hide when it settles.
+  let tilesBusy = false;
+  map.on("sourcedataloading", () => { if (!tilesBusy) { tilesBusy = true; busy(true); } });
+  map.on("idle", () => { if (tilesBusy) { tilesBusy = false; busy(false); } });
+
   // Contact lookup links. County data lists people as "LASTNAME FIRST MIDDLE";
   // flip to "First Middle Lastname" for people-search sites. Entities (LLC,
   // trust, etc.) go to a corporate-registry search instead.
@@ -475,6 +486,7 @@
     const countEl = document.getElementById("result-count");
     if (q.length < 2) return;
     countEl.textContent = "searching everywhere…";
+    busy(true);
     let results;
     try {
       const res = await fetch("/api/search?q=" + encodeURIComponent(q));
@@ -482,6 +494,8 @@
     } catch (err) {
       countEl.textContent = "search failed — try again";
       return;
+    } finally {
+      busy(false);
     }
     clearSearchResults();
     if (!results.length) {
@@ -505,12 +519,21 @@
       type: "circle",
       source: "search-results",
       paint: {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 5, 14, 10],
+        "circle-radius": 0,
+        "circle-radius-transition": { duration: 500 },
         "circle-color": "#16a34a",
         "circle-stroke-color": "#ffffff",
         "circle-stroke-width": 2,
         "circle-opacity": 0.95,
       },
+    });
+
+    // Pop the pins in once the layer exists.
+    requestAnimationFrame(() => {
+      if (map.getLayer("search-results")) {
+        map.setPaintProperty("search-results", "circle-radius",
+          ["interpolate", ["linear"], ["zoom"], 5, 5, 14, 10]);
+      }
     });
 
     const bounds = features.reduce(
@@ -542,6 +565,7 @@
       legendRow.classList.toggle("hidden", !toggle.checked);
       if (toggle.checked && !loaded) {
         loaded = true;
+        busy(true);
         try {
           const res = await fetch("/api/violations");
           const geojson = await res.json();
@@ -564,6 +588,8 @@
           toggle.checked = false;
           legendRow.classList.add("hidden");
           loaded = false;
+        } finally {
+          busy(false);
         }
         return;
       }
@@ -586,6 +612,7 @@
       legendRow.classList.toggle("hidden", !toggle.checked);
       if (toggle.checked && !loaded) {
         loaded = true;
+        busy(true);
         try {
           const res = await fetch("/api/taxsales");
           const geojson = await res.json();
@@ -607,6 +634,8 @@
           toggle.checked = false;
           legendRow.classList.add("hidden");
           loaded = false;
+        } finally {
+          busy(false);
         }
         return;
       }

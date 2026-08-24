@@ -240,6 +240,31 @@ html, body {
 
 .fcount a { color: #b91c1c; }
 
+.progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 0 0 8px 8px;
+}
+
+.progress.hidden { display: none; }
+
+.progress-bar {
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, #ea580c, #7c2d12);
+  border-radius: 3px;
+  animation: progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
 .popup-actions {
   margin-top: 9px;
   padding-top: 8px;

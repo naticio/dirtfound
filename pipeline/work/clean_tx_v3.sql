@@ -76,6 +76,7 @@ WITH accounts AS (
 SELECT
   Shape,
   count(*) AS accounts,
+  min(Prop_ID) AS prop_id,
   list_sort(list_distinct(flatten(array_agg(owners_list)))) AS owners_all,
   mode(owner_status) AS owner_status,
   arg_min(owner_location, owner_rep) AS owner_location,
@@ -93,6 +94,7 @@ COPY (
   SELECT
     Shape,
     accounts,
+    prop_id,
     owner_status,
     owner_location,
     mail_addr,

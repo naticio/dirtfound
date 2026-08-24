@@ -151,6 +151,14 @@
       const full = p.mail_addr + (blank(p.owner_location) ? "" : ", " + p.owner_location);
       links.push(`<a href="#" class="copy-addr" data-addr="${esc(full)}">📋 Copy mail addr</a>`);
     }
+    // Ownership/value history: DCAD account page + county clerk deed index.
+    // (Texas is non-disclosure — deeds show the chain of owners, not prices.)
+    if ((p.county || "").toUpperCase() === "DALLAS") {
+      if (!blank(p.prop_id)) {
+        links.push(`<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(p.prop_id)}" target="_blank" rel="noopener">📜 History (DCAD)</a>`);
+      }
+      links.push(`<a href="https://dallas.tx.publicsearch.us/results?department=RP&searchType=quickSearch&searchOcrText=false&query=${encodeURIComponent(rawName)}" target="_blank" rel="noopener">📄 Deeds</a>`);
+    }
     return `<div class="popup-actions">${links.join(" · ")}</div>`;
   }
 

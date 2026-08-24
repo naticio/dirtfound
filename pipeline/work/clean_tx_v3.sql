@@ -46,6 +46,9 @@ SELECT
       THEN upper(trim(MAIL_STAT))
   END AS owner_location,
   nullif(trim(MAIL_ADDR), '') AS mail_addr,
+  CASE WHEN regexp_matches(SITUS_ADDR, '[0-9]') AND regexp_matches(SITUS_ADDR, '[A-Za-z]{2}')
+    THEN regexp_replace(regexp_replace(trim(SITUS_ADDR), '\s+', ' ', 'g'), ' ,', ',', 'g')
+  END AS situs,
   COUNTY
 FROM (SELECT * FROM ST_Read('fgdb/stratmap25-landparcels_48453_travis_202508.gdb') UNION ALL BY NAME SELECT * FROM ST_Read('fgdb/stratmap25-landparcels_48113_dallas_202508.gdb'))
 WHERE Shape IS NOT NULL;
@@ -61,6 +64,7 @@ WITH accounts AS (
     arg_min(owner_location, owner) AS owner_location,
     arg_min(mail_addr, owner) AS mail_addr,
     max(value) AS value,
+    min(situs) AS situs_addr,
     min(situs_zip5) AS situs_zip,
     min(COUNTY) AS county
   FROM prepped
@@ -73,6 +77,7 @@ SELECT
   mode(owner_status) AS owner_status,
   arg_min(owner_location, owner_rep) AS owner_location,
   arg_min(mail_addr, owner_rep) AS mail_addr,
+  min(situs_addr) AS situs_addr,
   min(situs_zip) AS situs_zip,
   min(county) AS county,
   sum(value) AS total_value
@@ -88,6 +93,7 @@ COPY (
     owner_status,
     owner_location,
     mail_addr,
+    situs_addr,
     situs_zip,
     county,
     total_value,

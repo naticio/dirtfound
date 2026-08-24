@@ -144,7 +144,7 @@
     const status = p.owner_status || p.owner_origin;
     if (STATUS_LABELS[status]) lines.push(STATUS_LABELS[status]);
     lines.push(`Owners: ${p.n_owners ?? "?"} | Tax accounts: ${p.accounts ?? "?"}`);
-    if (!blank(p.situs_addr)) lines.push(esc(p.situs_addr));
+    if (!blank(p.situs_addr)) lines.push(`Property: ${esc(p.situs_addr)}`);
     else if (!blank(p.situs_zip)) lines.push(`Property ZIP: ${esc(p.situs_zip)}`);
     if (!blank(p.mail_addr)) {
       lines.push(`Mail to: ${esc(p.mail_addr)}${blank(p.owner_location) ? "" : ", " + esc(p.owner_location)}`);
@@ -335,8 +335,8 @@
         map.getZoom() < cfg.handoffZoom ? "zoom in first, then export" : "nothing to export";
       return;
     }
-    const cols = ["owner_names", "owner_status", "mail_addr", "owner_location",
-      "situs_zip", "county", "total_value", "n_owners", "accounts"];
+    const cols = ["owner_names", "owner_status", "situs_addr", "situs_zip",
+      "mail_addr", "owner_location", "county", "total_value", "n_owners", "accounts"];
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const csv = [cols.join(",")]
       .concat(rows.map((r) => cols.map((c) => q(r[c])).join(",")))

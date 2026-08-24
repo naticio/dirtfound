@@ -20,7 +20,7 @@ window.APP_CONFIG = {
   //   ?tiles=https://pub-dab6da17bbca46afa88c433f4727323c.r2.dev/tx_parcels.pmtiles
   // Versioned filename: tile archives are cached at the edge by byte range,
   // so replacing one means publishing under a new name, never overwriting.
-  tilesUrl: "/tiles/tx_parcels-2.pmtiles",
+  tilesUrl: "/tiles/tx_parcels-3.pmtiles",
 
   // Name of the layer inside the PMTiles archive.
   tilesLayer: "parcels",

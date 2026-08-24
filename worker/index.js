@@ -26,16 +26,27 @@ export default {
     if (url.pathname === "/api/violations") {
       return handleViolations(request, ctx, url);
     }
+    if (url.pathname === "/api/taxsales") {
+      return handleTaxSales(request, ctx, url);
+    }
     return env.ASSETS.fetch(request);
   },
 };
 
-// Open code-enforcement cases from Austin's open data portal (Socrata 6wtj-zbtb),
-// served as GeoJSON and edge-cached for 6 hours.
-const SODA_URL =
+// Open code-enforcement cases (Austin + Dallas open data portals),
+// merged into one GeoJSON and edge-cached for 6 hours.
+const AUSTIN_URL =
   "https://data.austintexas.gov/resource/6wtj-zbtb.json" +
   "?$where=" + encodeURIComponent("status != 'Closed' AND latitude IS NOT NULL") +
   "&$select=" + encodeURIComponent("case_id,status,address,zip_code,opened_date,description,latitude,longitude") +
+  "&$limit=25000";
+
+const DALLAS_URL =
+  "https://www.dallasopendata.com/resource/d7e7-envw.json" +
+  "?$where=" + encodeURIComponent(
+    "department = 'Code Compliance' AND status in('In Progress','New','Escalated') AND lat_location IS NOT NULL") +
+  "&$select=" + encodeURIComponent(
+    "service_request_number,service_request_type,status,address,created_date,lat_location") +
   "&$limit=25000";
 
 async function handleViolations(request, ctx, url) {
@@ -44,30 +55,57 @@ async function handleViolations(request, ctx, url) {
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
-  const upstream = await fetch(SODA_URL, {
-    headers: { Accept: "application/json" },
-  });
-  if (!upstream.ok) {
+  const [austinRes, dallasRes] = await Promise.all([
+    fetch(AUSTIN_URL, { headers: { Accept: "application/json" } }),
+    fetch(DALLAS_URL, { headers: { Accept: "application/json" } }),
+  ]);
+  if (!austinRes.ok && !dallasRes.ok) {
     return withCors(new Response("Upstream error", { status: 502 }));
   }
-  const rows = await upstream.json();
 
   const features = [];
-  for (const r of rows) {
-    const lon = Number(r.longitude), lat = Number(r.latitude);
-    if (!isFinite(lon) || !isFinite(lat)) continue;
-    features.push({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [lon, lat] },
-      properties: {
-        id: r.case_id,
-        status: r.status,
-        address: r.address || "",
-        zip: r.zip_code || "",
-        opened: (r.opened_date || "").slice(0, 10),
-        desc: r.description || "",
-      },
-    });
+
+  if (austinRes.ok) {
+    for (const r of await austinRes.json()) {
+      const lon = Number(r.longitude), lat = Number(r.latitude);
+      if (!isFinite(lon) || !isFinite(lat)) continue;
+      features.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [lon, lat] },
+        properties: {
+          id: r.case_id,
+          status: r.status,
+          address: r.address || "",
+          zip: r.zip_code || "",
+          opened: (r.opened_date || "").slice(0, 10),
+          desc: r.description || "",
+          city: "Austin",
+        },
+      });
+    }
+  }
+
+  if (dallasRes.ok) {
+    for (const r of await dallasRes.json()) {
+      // lat_location looks like "(32.840477,-96.681035)"
+      const m = /\((-?[\d.]+),(-?[\d.]+)\)/.exec(r.lat_location || "");
+      if (!m) continue;
+      const lat = Number(m[1]), lon = Number(m[2]);
+      if (!isFinite(lon) || !isFinite(lat) || lat < 32 || lat > 33.5) continue;
+      features.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [lon, lat] },
+        properties: {
+          id: r.service_request_number,
+          status: r.status,
+          address: r.address || "",
+          zip: "",
+          opened: (r.created_date || "").slice(0, 10),
+          desc: r.service_request_type || "",
+          city: "Dallas",
+        },
+      });
+    }
   }
 
   const response = new Response(
@@ -77,6 +115,66 @@ async function handleViolations(request, ctx, url) {
         ...CORS_HEADERS,
         "Content-Type": "application/json",
         "Cache-Control": "public, max-age=21600",
+      },
+    }
+  );
+  ctx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
+}
+
+// Texas tax-foreclosure sale properties from LGBS (the delinquent-tax law firm
+// for most TX counties), paged into one GeoJSON and edge-cached for 12 hours.
+const LGBS_PAGE = (offset) =>
+  `https://taxsales.lgbs.com/api/property_sales/?state=TX&limit=1000&offset=${offset}`;
+
+async function handleTaxSales(request, ctx, url) {
+  const cache = caches.default;
+  const cacheKey = new Request(url.origin + "/api/taxsales", { method: "GET" });
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  const features = [];
+  for (let offset = 0; offset < 12000; offset += 1000) {
+    const res = await fetch(LGBS_PAGE(offset), {
+      headers: { Accept: "application/json", "User-Agent": "dirtfound.com data layer" },
+    });
+    if (!res.ok) break;
+    const page = await res.json();
+    for (const r of page.results || []) {
+      const coords = r.geometry && r.geometry.coordinates;
+      if (!coords || !isFinite(coords[0]) || !isFinite(coords[1])) continue;
+      features.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [coords[0], coords[1]] },
+        properties: {
+          id: r.uid,
+          type: r.sale_type || "",
+          status: r.status || "",
+          sale_date: r.sale_date_only || "",
+          min_bid: Number(r.minimum_bid) || null,
+          value: Number(r.value) || null,
+          address: [r.prop_address_one, r.prop_city, r.prop_zipcode]
+            .filter(Boolean).join(", "),
+          county: r.county || "",
+          account: r.account_nbr || "",
+          cause: r.cause_nbr || "",
+        },
+      });
+    }
+    if (!page.next) break;
+  }
+
+  if (!features.length) {
+    return withCors(new Response("Upstream error", { status: 502 }));
+  }
+
+  const response = new Response(
+    JSON.stringify({ type: "FeatureCollection", features }),
+    {
+      headers: {
+        ...CORS_HEADERS,
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=43200",
       },
     }
   );

@@ -13,12 +13,12 @@ window.APP_CONFIG = {
   // can be tested without editing this file: append
   //   ?tiles=http://localhost:8002/tx_parcels_travis.pmtiles
   // to the app URL while `npx http-server -p 8002 --cors` runs in pipeline/work.
-  // Default: your own Travis County tileset served from R2 via the Worker,
+  // Default: your own Travis + Dallas County tileset served from R2 via the Worker,
   // with owner_status absentee classification.
   // Kyle Walker's statewide demo tileset (owner_origin only, no absentee flags)
   // is still usable via:
   //   ?tiles=https://pub-dab6da17bbca46afa88c433f4727323c.r2.dev/tx_parcels.pmtiles
-  tilesUrl: "/tiles/tx_parcels_travis.pmtiles",
+  tilesUrl: "/tiles/tx_parcels.pmtiles",
 
   // Name of the layer inside the PMTiles archive.
   tilesLayer: "parcels",

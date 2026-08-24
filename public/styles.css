@@ -227,3 +227,8 @@ html, body {
   .fcount { display: none; }
   .fsearch { width: 110px; }
 }
+
+.tdot {
+  background: #eab308;
+  box-shadow: 0 0 0 1px #78350f;
+}

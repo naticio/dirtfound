@@ -78,6 +78,7 @@
 
     wireFilterBar();
     wireViolations();
+    wireTaxSales();
 
     map.addLayer({
       id: "counties-fill",
@@ -171,7 +172,11 @@
     map.on("click", (e) => {
       // Violations sit on top, then parcels, then counties when zoomed out.
       let html = null;
-      if (map.getLayer("violations")) {
+      if (map.getLayer("taxsales")) {
+        const t = map.queryRenderedFeatures(e.point, { layers: ["taxsales"] });
+        if (t.length) html = taxSalePopupHTML(t[0].properties);
+      }
+      if (!html && map.getLayer("violations")) {
         const v = map.queryRenderedFeatures(e.point, { layers: ["violations"] });
         if (v.length) html = violationPopupHTML(v[0].properties);
       }
@@ -419,6 +424,66 @@
     };
     toggle.addEventListener("change", sync);
     if (toggle.checked) sync(); // box ticked before the map finished loading
+  }
+
+  // ---- Tax foreclosure sales layer (statewide TX via /api/taxsales) -----
+
+  function wireTaxSales() {
+    const toggle = document.getElementById("taxsales-toggle");
+    const legendRow = document.getElementById("legend-taxsales");
+    let loaded = false;
+
+    const sync = async () => {
+      legendRow.classList.toggle("hidden", !toggle.checked);
+      if (toggle.checked && !loaded) {
+        loaded = true;
+        try {
+          const res = await fetch("/api/taxsales");
+          const geojson = await res.json();
+          map.addSource("taxsales", { type: "geojson", data: geojson });
+          map.addLayer({
+            id: "taxsales",
+            type: "circle",
+            source: "taxsales",
+            paint: {
+              "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 3, 10, 5, 14, 8],
+              "circle-color": "#eab308",
+              "circle-stroke-color": "#78350f",
+              "circle-stroke-width": 1.5,
+              "circle-opacity": 0.95,
+            },
+          });
+        } catch (err) {
+          console.error("tax sales load failed:", err);
+          toggle.checked = false;
+          legendRow.classList.add("hidden");
+          loaded = false;
+        }
+        return;
+      }
+      if (map.getLayer("taxsales")) {
+        map.setLayoutProperty("taxsales", "visibility", toggle.checked ? "visible" : "none");
+      }
+    };
+    toggle.addEventListener("change", sync);
+    if (toggle.checked) sync();
+  }
+
+  function taxSalePopupHTML(p) {
+    const lines = [
+      `<strong>💰 ${esc(p.type || "Tax sale")}</strong> — ${esc(p.status)}`,
+    ];
+    if (!blank(p.sale_date)) lines.push(`Sale date: ${esc(p.sale_date)}`);
+    if (!blank(p.address)) lines.push(esc(p.address));
+    lines.push(esc(p.county));
+    if (p.min_bid) lines.push(`Minimum bid: ${fmtUSD.format(p.min_bid)}`);
+    if (p.value) lines.push(`Assessed value: ${fmtUSD.format(p.value)}`);
+    if (p.min_bid && p.value && p.value > p.min_bid) {
+      lines.push(`<strong>Spread: ${fmtUSD.format(p.value - p.min_bid)}</strong>`);
+    }
+    if (!blank(p.account)) lines.push(`Account: ${esc(p.account)}`);
+    if (!blank(p.cause)) lines.push(`Cause #: ${esc(p.cause)}`);
+    return lines.join("<br>");
   }
 
   function violationPopupHTML(p) {

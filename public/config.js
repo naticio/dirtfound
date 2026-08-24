@@ -18,7 +18,9 @@ window.APP_CONFIG = {
   // Kyle Walker's statewide demo tileset (owner_origin only, no absentee flags)
   // is still usable via:
   //   ?tiles=https://pub-dab6da17bbca46afa88c433f4727323c.r2.dev/tx_parcels.pmtiles
-  tilesUrl: "/tiles/tx_parcels.pmtiles",
+  // Versioned filename: tile archives are cached at the edge by byte range,
+  // so replacing one means publishing under a new name, never overwriting.
+  tilesUrl: "/tiles/tx_parcels-2.pmtiles",
 
   // Name of the layer inside the PMTiles archive.
   tilesLayer: "parcels",

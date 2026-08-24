@@ -311,7 +311,9 @@
       });
       return;
     }
-    el.textContent = `${fmtInt.format(n)} parcels in view`;
+    // Below z13 the tiles drop the smallest parcels to stay light — say so.
+    const hint = map.getZoom() < 13 ? " · zoom in for all parcels" : "";
+    el.textContent = `${fmtInt.format(n)} parcels in view${hint}`;
   }
 
   function resetFilters() {

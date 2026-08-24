@@ -3,19 +3,43 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Texas Parcel Ownership — 13.5M parcels</title>
+  <title>DirtFound — find off-market deals by owner</title>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div id="map"></div>
 
-  <header class="panel title-card">
-    <h1>Texas Parcel Ownership</h1>
-    <p>Find absentee-owned parcels — owners whose mailing address doesn't match
-    the property. Zoom out for county stats; zoom in past level 10 for individual
-    parcels (Travis County / Austin for now). Click a parcel for the owner's
-    name and mailing address.</p>
+  <header class="panel filterbar">
+    <span class="brand">DirtFound</span>
+
+    <div class="fgroup">
+      <button class="fbtn" id="btn-status" type="button">Owner type ▾</button>
+      <div class="dropdown hidden" id="dd-status">
+        <label><input type="checkbox" data-status="Out-of-state" checked /> Absentee — out-of-state</label>
+        <label><input type="checkbox" data-status="Absentee (TX)" checked /> Absentee — in-state</label>
+        <label><input type="checkbox" data-status="Local" checked /> Local owner</label>
+        <label><input type="checkbox" data-status="Unknown" checked /> Unknown</label>
+      </div>
+    </div>
+
+    <div class="fgroup">
+      <button class="fbtn" id="btn-value" type="button">Value ▾</button>
+      <div class="dropdown hidden" id="dd-value">
+        <label>Min $ <input type="number" id="val-min" placeholder="0" min="0" step="10000" /></label>
+        <label>Max $ <input type="number" id="val-max" placeholder="no limit" min="0" step="10000" /></label>
+      </div>
+    </div>
+
+    <input class="fsearch" id="owner-search" type="search" placeholder="Owner name…" />
+
+    <label class="fbtn ftoggle" for="violations-toggle">
+      <input type="checkbox" id="violations-toggle" /> Violations
+    </label>
+
+    <button class="fbtn primary" id="export-csv" type="button">Export CSV</button>
+
+    <span class="fcount" id="result-count"></span>
   </header>
 
   <div class="panel legend" id="legend-counties">
@@ -32,10 +56,9 @@
       <li><span class="swatch" style="background:#3b5bdb"></span>Local owner</li>
       <li><span class="swatch" style="background:#94a3b8"></span>Unknown</li>
     </ul>
-    <label class="filter-toggle">
-      <input type="checkbox" id="absentee-only" />
-      Absentee owners only
-    </label>
+    <div class="legend-violations hidden" id="legend-violations">
+      <span class="vdot"></span>Open code violation
+    </div>
   </div>
 
   <div class="panel credits">

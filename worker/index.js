@@ -23,9 +23,66 @@ export default {
     if (url.pathname.startsWith("/tiles/")) {
       return handleTiles(request, env, ctx, url);
     }
+    if (url.pathname === "/api/violations") {
+      return handleViolations(request, ctx, url);
+    }
     return env.ASSETS.fetch(request);
   },
 };
+
+// Open code-enforcement cases from Austin's open data portal (Socrata 6wtj-zbtb),
+// served as GeoJSON and edge-cached for 6 hours.
+const SODA_URL =
+  "https://data.austintexas.gov/resource/6wtj-zbtb.json" +
+  "?$where=" + encodeURIComponent("status != 'Closed' AND latitude IS NOT NULL") +
+  "&$select=" + encodeURIComponent("case_id,status,address,zip_code,opened_date,description,latitude,longitude") +
+  "&$limit=25000";
+
+async function handleViolations(request, ctx, url) {
+  const cache = caches.default;
+  const cacheKey = new Request(url.origin + "/api/violations", { method: "GET" });
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  const upstream = await fetch(SODA_URL, {
+    headers: { Accept: "application/json" },
+  });
+  if (!upstream.ok) {
+    return withCors(new Response("Upstream error", { status: 502 }));
+  }
+  const rows = await upstream.json();
+
+  const features = [];
+  for (const r of rows) {
+    const lon = Number(r.longitude), lat = Number(r.latitude);
+    if (!isFinite(lon) || !isFinite(lat)) continue;
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [lon, lat] },
+      properties: {
+        id: r.case_id,
+        status: r.status,
+        address: r.address || "",
+        zip: r.zip_code || "",
+        opened: (r.opened_date || "").slice(0, 10),
+        desc: r.description || "",
+      },
+    });
+  }
+
+  const response = new Response(
+    JSON.stringify({ type: "FeatureCollection", features }),
+    {
+      headers: {
+        ...CORS_HEADERS,
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=21600",
+      },
+    }
+  );
+  ctx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
+}
 
 async function handleTiles(request, env, ctx, url) {
   if (request.method === "OPTIONS") {

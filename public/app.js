@@ -25,10 +25,14 @@
     "Texas owner", "#3b5bdb",
     "#94a3b8",
   ];
-  const ABSENTEE_FILTER = [
-    "in", STATUS_EXPR,
-    ["literal", ["Out-of-state", "Out-of-state owner", "Absentee (TX)"]],
-  ];
+  // Legacy tilesets use owner_origin labels; map each canonical status to all
+  // the labels that should match it when filtering.
+  const STATUS_ALIASES = {
+    "Out-of-state": ["Out-of-state", "Out-of-state owner"],
+    "Absentee (TX)": ["Absentee (TX)"],
+    "Local": ["Local", "Texas owner"],
+    "Unknown": ["Unknown"],
+  };
 
   const map = new maplibregl.Map({
     container: "map",
@@ -72,10 +76,8 @@
       },
     });
 
-    const absenteeToggle = document.getElementById("absentee-only");
-    absenteeToggle.addEventListener("change", () => {
-      map.setFilter("parcels", absenteeToggle.checked ? ABSENTEE_FILTER : null);
-    });
+    wireFilterBar();
+    wireViolations();
 
     map.addLayer({
       id: "counties-fill",
@@ -167,9 +169,13 @@
 
   function wirePopups() {
     map.on("click", (e) => {
-      // Prefer a parcel hit; fall back to the county layer when zoomed out.
-      const parcels = map.queryRenderedFeatures(e.point, { layers: ["parcels"] });
+      // Violations sit on top, then parcels, then counties when zoomed out.
       let html = null;
+      if (map.getLayer("violations")) {
+        const v = map.queryRenderedFeatures(e.point, { layers: ["violations"] });
+        if (v.length) html = violationPopupHTML(v[0].properties);
+      }
+      const parcels = html ? [] : map.queryRenderedFeatures(e.point, { layers: ["parcels"] });
       if (parcels.length) {
         html = parcelPopupHTML(parcels[0].properties);
       } else {
@@ -223,6 +229,205 @@
     });
 
     map.on("mouseout", clear);
+  }
+
+  // ---- Filter bar (owner type, value range, owner search, CSV export) --
+
+  const filterState = {
+    statuses: new Set(Object.keys(STATUS_ALIASES)),
+    min: null,
+    max: null,
+    query: "",
+  };
+
+  function buildFilter() {
+    const parts = [];
+    if (filterState.statuses.size < Object.keys(STATUS_ALIASES).length) {
+      const labels = [...filterState.statuses].flatMap((s) => STATUS_ALIASES[s]);
+      parts.push(["in", STATUS_EXPR, ["literal", labels]]);
+    }
+    const valueExpr = ["to-number", ["coalesce", ["get", "total_value"], 0]];
+    if (filterState.min !== null) parts.push([">=", valueExpr, filterState.min]);
+    if (filterState.max !== null) parts.push(["<=", valueExpr, filterState.max]);
+    if (filterState.query) {
+      parts.push([
+        ">=",
+        ["index-of", filterState.query.toUpperCase(),
+          ["upcase", ["coalesce", ["get", "owner_names"], ""]]],
+        0,
+      ]);
+    }
+    return parts.length ? ["all", ...parts] : null;
+  }
+
+  function applyFilters() {
+    map.setFilter("parcels", buildFilter());
+    scheduleCount();
+  }
+
+  // Parcels straddling tile borders appear once per tile; dedupe for counting/export.
+  function visibleParcels() {
+    const seen = new Set();
+    const out = [];
+    for (const f of map.queryRenderedFeatures({ layers: ["parcels"] })) {
+      const p = f.properties;
+      const key = `${p.owner_names}|${p.mail_addr}|${p.total_value}|${p.accounts}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(p);
+      }
+    }
+    return out;
+  }
+
+  let countTimer = null;
+  function scheduleCount() {
+    clearTimeout(countTimer);
+    countTimer = setTimeout(updateCount, 250);
+  }
+
+  function updateCount() {
+    const el = document.getElementById("result-count");
+    if (map.getZoom() < cfg.handoffZoom) {
+      el.textContent = "zoom in to see parcels";
+      return;
+    }
+    el.textContent = `${fmtInt.format(visibleParcels().length)} parcels in view`;
+  }
+
+  function exportCSV() {
+    const rows = visibleParcels();
+    if (!rows.length) {
+      document.getElementById("result-count").textContent =
+        map.getZoom() < cfg.handoffZoom ? "zoom in first, then export" : "nothing to export";
+      return;
+    }
+    const cols = ["owner_names", "owner_status", "mail_addr", "owner_location",
+      "situs_zip", "county", "total_value", "n_owners", "accounts"];
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [cols.join(",")]
+      .concat(rows.map((r) => cols.map((c) => q(r[c])).join(",")))
+      .join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = "dirtfound-parcels.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function wireFilterBar() {
+    // Dropdown open/close
+    const pairs = [
+      ["btn-status", "dd-status"],
+      ["btn-value", "dd-value"],
+    ];
+    for (const [btnId, ddId] of pairs) {
+      const btn = document.getElementById(btnId);
+      const dd = document.getElementById(ddId);
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        for (const [, otherId] of pairs) {
+          if (otherId !== ddId) document.getElementById(otherId).classList.add("hidden");
+        }
+        dd.classList.toggle("hidden");
+      });
+      dd.addEventListener("click", (e) => e.stopPropagation());
+    }
+    document.addEventListener("click", () => {
+      for (const [, ddId] of pairs) document.getElementById(ddId).classList.add("hidden");
+    });
+
+    // Owner type checkboxes
+    document.querySelectorAll("#dd-status input[data-status]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        cb.checked ? filterState.statuses.add(cb.dataset.status)
+                   : filterState.statuses.delete(cb.dataset.status);
+        applyFilters();
+      });
+    });
+
+    // Value range
+    const parseVal = (el) => {
+      const n = Number(el.value);
+      return el.value !== "" && isFinite(n) ? n : null;
+    };
+    document.getElementById("val-min").addEventListener("input", (e) => {
+      filterState.min = parseVal(e.target);
+      applyFilters();
+    });
+    document.getElementById("val-max").addEventListener("input", (e) => {
+      filterState.max = parseVal(e.target);
+      applyFilters();
+    });
+
+    // Owner name search (debounced)
+    let searchTimer = null;
+    document.getElementById("owner-search").addEventListener("input", (e) => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        filterState.query = e.target.value.trim();
+        applyFilters();
+      }, 300);
+    });
+
+    document.getElementById("export-csv").addEventListener("click", exportCSV);
+
+    map.on("moveend", scheduleCount);
+    map.on("idle", scheduleCount);
+    scheduleCount();
+  }
+
+  // ---- Code violations layer (Austin open data via /api/violations) ----
+
+  function wireViolations() {
+    const toggle = document.getElementById("violations-toggle");
+    const legendRow = document.getElementById("legend-violations");
+    let loaded = false;
+
+    const sync = async () => {
+      legendRow.classList.toggle("hidden", !toggle.checked);
+      if (toggle.checked && !loaded) {
+        loaded = true;
+        try {
+          const res = await fetch("/api/violations");
+          const geojson = await res.json();
+          map.addSource("violations", { type: "geojson", data: geojson });
+          map.addLayer({
+            id: "violations",
+            type: "circle",
+            source: "violations",
+            minzoom: 9,
+            paint: {
+              "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3, 14, 7],
+              "circle-color": "#9333ea",
+              "circle-stroke-color": "#ffffff",
+              "circle-stroke-width": 1.25,
+              "circle-opacity": 0.9,
+            },
+          });
+        } catch (err) {
+          console.error("violations load failed:", err);
+          toggle.checked = false;
+          legendRow.classList.add("hidden");
+          loaded = false;
+        }
+        return;
+      }
+      if (map.getLayer("violations")) {
+        map.setLayoutProperty("violations", "visibility", toggle.checked ? "visible" : "none");
+      }
+    };
+    toggle.addEventListener("change", sync);
+    if (toggle.checked) sync(); // box ticked before the map finished loading
+  }
+
+  function violationPopupHTML(p) {
+    return [
+      `<strong>⚠️ Code case ${esc(p.id)}</strong>`,
+      `${esc(p.desc)} — ${esc(p.status)}`,
+      blank(p.address) ? null : esc(p.address + (p.zip ? " " + p.zip : "")),
+      `Opened ${esc(p.opened)}`,
+    ].filter(Boolean).join("<br>");
   }
 
   // ---- Zoom-dependent legends -----------------------------------------

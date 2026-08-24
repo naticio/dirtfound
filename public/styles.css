@@ -232,3 +232,10 @@ html, body {
   background: #eab308;
   box-shadow: 0 0 0 1px #78350f;
 }
+
+.fsearch.active {
+  border-color: #7c2d12;
+  background: #fef3c7;
+}
+
+.fcount a { color: #b91c1c; }

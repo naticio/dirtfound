@@ -291,13 +291,39 @@
     countTimer = setTimeout(updateCount, 250);
   }
 
+  function filtersActive() {
+    return filterState.statuses.size < Object.keys(STATUS_ALIASES).length ||
+      filterState.min !== null || filterState.max !== null || filterState.query;
+  }
+
   function updateCount() {
     const el = document.getElementById("result-count");
     if (map.getZoom() < cfg.handoffZoom) {
       el.textContent = "zoom in to see parcels";
       return;
     }
-    el.textContent = `${fmtInt.format(visibleParcels().length)} parcels in view`;
+    const n = visibleParcels().length;
+    if (n === 0 && filtersActive()) {
+      el.innerHTML = `no matches — <a href="#" id="clear-filters">clear filters</a>`;
+      document.getElementById("clear-filters").addEventListener("click", (e) => {
+        e.preventDefault();
+        resetFilters();
+      });
+      return;
+    }
+    el.textContent = `${fmtInt.format(n)} parcels in view`;
+  }
+
+  function resetFilters() {
+    filterState.statuses = new Set(Object.keys(STATUS_ALIASES));
+    filterState.min = null;
+    filterState.max = null;
+    filterState.query = "";
+    document.querySelectorAll("#dd-status input[data-status]").forEach((cb) => (cb.checked = true));
+    document.getElementById("val-min").value = "";
+    document.getElementById("val-max").value = "";
+    document.getElementById("owner-search").value = "";
+    applyFilters();
   }
 
   function exportCSV() {
@@ -368,6 +394,7 @@
     // Owner name search (debounced)
     let searchTimer = null;
     document.getElementById("owner-search").addEventListener("input", (e) => {
+      e.target.classList.toggle("active", e.target.value.trim() !== "");
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => {
         filterState.query = e.target.value.trim();

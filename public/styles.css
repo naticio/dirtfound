@@ -239,3 +239,17 @@ html, body {
 }
 
 .fcount a { color: #b91c1c; }
+
+.popup-actions {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+  font-weight: 600;
+}
+
+.popup-actions a {
+  color: #7c2d12;
+  text-decoration: none;
+}
+
+.popup-actions a:hover { text-decoration: underline; }

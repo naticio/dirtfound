@@ -130,6 +130,40 @@
 
   const blank = (v) => v === undefined || v === null || String(v).trim() === "";
 
+  // Contact lookup links. County data lists people as "LASTNAME FIRST MIDDLE";
+  // flip to "First Middle Lastname" for people-search sites. Entities (LLC,
+  // trust, etc.) go to a corporate-registry search instead.
+  const ENTITY_RE = /\b(LLC|INC|CORP|LP|LLP|LTD|TRUST|TR|CO|COMPANY|PARTNERS|HOLDINGS|PROPERTIES|INVESTMENTS|CHURCH|CITY|COUNTY|BANK|ESTATE|ESTATES)\b/i;
+
+  function contactLinksHTML(p) {
+    const rawName = (p.owner_names || p.name || "").split(";")[0].split("&")[0].trim();
+    if (!rawName) return "";
+    const links = [];
+    if (ENTITY_RE.test(rawName)) {
+      links.push(`<a href="https://opencorporates.com/companies/us_tx?q=${encodeURIComponent(rawName)}" target="_blank" rel="noopener">🏢 Look up entity</a>`);
+    } else {
+      const parts = rawName.split(/\s+/);
+      const flipped = parts.length > 1 ? parts.slice(1).join(" ") + " " + parts[0] : rawName;
+      const loc = (p.owner_location || "").trim() || "TX";
+      links.push(`<a href="https://www.truepeoplesearch.com/results?name=${encodeURIComponent(flipped)}&citystatezip=${encodeURIComponent(loc)}" target="_blank" rel="noopener">📞 Find contact</a>`);
+    }
+    if (!blank(p.mail_addr)) {
+      const full = p.mail_addr + (blank(p.owner_location) ? "" : ", " + p.owner_location);
+      links.push(`<a href="#" class="copy-addr" data-addr="${esc(full)}">📋 Copy mail addr</a>`);
+    }
+    return `<div class="popup-actions">${links.join(" · ")}</div>`;
+  }
+
+  // Delegated handler for the copy button inside popups.
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest(".copy-addr");
+    if (!el) return;
+    e.preventDefault();
+    navigator.clipboard.writeText(el.dataset.addr).then(() => {
+      el.textContent = "✓ Copied";
+    });
+  });
+
   const STATUS_LABELS = {
     "Out-of-state": "🔴 Absentee — out-of-state owner",
     "Out-of-state owner": "🔴 Out-of-state owner",
@@ -155,7 +189,7 @@
     lines.push(blank(p.total_value)
       ? "No market value reported"
       : `Total value: ${fmtUSD.format(p.total_value)}`);
-    return lines.join("<br>");
+    return lines.join("<br>") + contactLinksHTML(p);
   }
 
   function countyPopupHTML(p) {
@@ -486,7 +520,7 @@
       blank(p.addr) ? null : `Property: ${esc(p.addr)}`,
       `${esc(p.county)} County`,
       p.value ? `Total value: ${fmtUSD.format(p.value)}` : null,
-    ].filter(Boolean).join("<br>");
+    ].filter(Boolean).join("<br>") + contactLinksHTML(p);
   }
 
   // ---- Code violations layer (Austin open data via /api/violations) ----

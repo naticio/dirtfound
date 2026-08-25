@@ -1,0 +1,21 @@
+name = "dirtfound-transcriber"
+main = "src/worker.js"
+compatibility_date = "2026-08-01"
+account_id = "ab9d761a44aeabca6ed17b66827eaf3d"
+workers_dev = true
+
+# Internal tool: transcribes our own RE video walkthroughs via Groq's Whisper API.
+# Standalone worker — no relation to crayo-web-worker's KV/R2/routes.
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[kv_namespaces]]
+binding = "TRANSCRIPT_JOBS"
+id = "77cfaaffd26b4691b22ed6168a641189"
+
+# Secret to set: npx wrangler secret put GROQ_API_KEY
+
+[observability]
+enabled = true

@@ -793,20 +793,21 @@
     </div>`;
   }
 
-  async function startCheckout() {
+  async function startCheckout(bodyEl) {
     busy(true);
     try {
       const res = await fetch("/api/checkout");
       const d = await res.json();
       if (d.url) { location.href = d.url; return; }
-      document.getElementById("dealsheet-body").textContent = d.error || "Checkout failed.";
+      bodyEl.textContent = d.error || "Checkout failed.";
     } catch {
-      document.getElementById("dealsheet-body").textContent = "Checkout failed — try again.";
+      bodyEl.textContent = "Checkout failed — try again.";
     } finally { busy(false); }
   }
 
   document.addEventListener("click", (e) => {
-    if (e.target.closest("#paywall-buy")) startCheckout();
+    const btn = e.target.closest("#paywall-buy");
+    if (btn) startCheckout(btn.closest(".dealsheet-body") || document.getElementById("dealsheet-body"));
   });
 
   // Returning from Stripe: ?checkout=cs_... → exchange for an access token.
@@ -987,6 +988,142 @@
     if (map.getLayer("deals-dots")) map.setLayoutProperty("deals-dots", "visibility", "none");
   });
   document.getElementById("deals-csv").addEventListener("click", dealsCSV);
+
+  // ---- Delinquent Tax panel (Dallas County TRW export) -----------------
+
+  let delinquentCache = null;
+  let delinquentMeta = null;
+  const delinquentState = { sort: "amount_due", dir: -1, q: "" };
+
+  async function fetchDelinquent(q) {
+    const res = await fetch("/api/delinquent" + (q ? "?q=" + encodeURIComponent(q) : ""), {
+      headers: { Authorization: "Bearer " + getToken() },
+      cache: "no-store",
+    });
+    if (res.status === 402) return { paywall: true };
+    return await res.json();
+  }
+
+  function delinquentPaywallHTML() {
+    return `<div class="paywall">
+      <div class="paywall-icon">🧾🔒</div>
+      <h3>DirtFound Pro</h3>
+      <p>95,000+ Dallas County accounts currently behind on property taxes, straight
+      from the county's own tax roll — the earliest, least-competed-for distress
+      signal there is. Included with the same Pro subscription as the Deal Sheet.</p>
+      <button class="fbtn primary paywall-btn" id="paywall-buy">Unlock — $100/month</button>
+      <p class="paywall-small">Stripe checkout · cancel anytime · already subscribed on
+      this browser? Access restores automatically after checkout.</p>
+    </div>`;
+  }
+
+  async function openDelinquent() {
+    const panel = document.getElementById("delinquent-panel");
+    const body = document.getElementById("delinquent-body");
+    panel.classList.remove("hidden");
+    if (!delinquentCache) {
+      body.textContent = "Loading…";
+      busy(true);
+      try {
+        let r = await fetchDelinquent("");
+        if (r.paywall && (await tryRenew())) r = await fetchDelinquent("");
+        if (r.paywall) { body.innerHTML = delinquentPaywallHTML(); return; }
+        delinquentCache = r.delinquent;
+        delinquentMeta = { total: r.total, total_owed: r.total_owed };
+      } catch {
+        body.textContent = "Failed to load — try again.";
+        return;
+      } finally { busy(false); }
+    }
+    renderDelinquent();
+  }
+
+  function delinquentRows() {
+    const key = {
+      amount_due: (d) => d.amount_due || 0,
+      years_delinquent: (d) => d.years_delinquent || 0,
+      owner: (d) => d.owner || "￿",
+      city: (d) => d.city || "￿",
+    }[delinquentState.sort];
+    const rows = delinquentCache.slice();
+    rows.sort((a, b) => {
+      const ka = key(a), kb = key(b);
+      return (ka < kb ? -1 : ka > kb ? 1 : 0) * delinquentState.dir;
+    });
+    return rows;
+  }
+
+  function renderDelinquent() {
+    const body = document.getElementById("delinquent-body");
+    const rows = delinquentRows();
+    const arrow = (col) => delinquentState.sort === col ? (delinquentState.dir < 0 ? " ▼" : " ▲") : "";
+    const shownNote = delinquentMeta
+      ? `Showing top ${fmtInt.format(rows.length)} of ${fmtInt.format(delinquentMeta.total)} accounts · ${fmtUSD.format(delinquentMeta.total_owed)} owed county-wide`
+      : "";
+    const controls = `<div class="deal-controls">
+      <input type="search" id="dq-search" placeholder="Search owner or address…" value="${esc(delinquentState.q)}" style="flex:1;min-width:160px">
+      <span class="deal-count">${shownNote}</span>
+    </div>`;
+    const tr = rows.map((d) => {
+      const tps = tpsLink(d.owner);
+      const links = [
+        tps ? `<a href="${tps}" target="_blank" rel="noopener">\u{1F4DE}</a>` : "",
+        d.account ? `<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(d.account)}" target="_blank" rel="noopener">\u{1F4DC}</a>` : "",
+      ].filter(Boolean).join(" ");
+      const sub = [
+        d.city ? esc(d.city) : "",
+        d.years_delinquent ? `${d.years_delinquent} yr${d.years_delinquent === 1 ? "" : "s"} behind` : "",
+        d.suit ? `\u{2696}️ suit ${esc(d.causeno || "pending")}` : "",
+      ].filter(Boolean).join(" · ");
+      return `<tr>
+        <td>${esc(d.owner || "?")}<div class="deal-sub">${esc(d.address || "")}${sub ? " · " + sub : ""}</div></td>
+        <td class="num"><strong>${fmtUSD.format(d.amount_due || 0)}</strong></td>
+        <td class="deal-links">${links}</td>
+      </tr>`;
+    }).join("");
+    body.innerHTML = controls + `<table class="deal-table">
+      <thead><tr>
+        <th data-sort="owner">Owner${arrow("owner")}</th>
+        <th data-sort="amount_due">Amount due${arrow("amount_due")}</th><th></th>
+      </tr></thead><tbody>${tr}</tbody></table>`;
+
+    document.getElementById("dq-search").addEventListener("keydown", async (e) => {
+      if (e.key !== "Enter") return;
+      delinquentState.q = e.target.value.trim();
+      body.innerHTML = controls + "Searching…";
+      busy(true);
+      try {
+        const r = await fetchDelinquent(delinquentState.q);
+        if (!r.paywall) { delinquentCache = r.delinquent; delinquentMeta = { total: r.total, total_owed: r.total_owed }; }
+        renderDelinquent();
+      } finally { busy(false); }
+    });
+    body.querySelectorAll("th[data-sort]").forEach((th) => th.addEventListener("click", () => {
+      const col = th.dataset.sort;
+      if (!col) return;
+      if (delinquentState.sort === col) delinquentState.dir *= -1;
+      else { delinquentState.sort = col; delinquentState.dir = col === "owner" ? 1 : -1; }
+      renderDelinquent();
+    }));
+  }
+
+  function delinquentCSV() {
+    if (!delinquentCache) return;
+    const cols = ["account", "owner", "address", "city", "state", "zip", "amount_due", "years_delinquent", "oldest_year", "due_date", "suit", "causeno"];
+    const q2 = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [cols.join(",")].concat(delinquentRows().map((d) => cols.map((c) => q2(d[c])).join(","))).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = "dirtfound-delinquent-tax.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  document.getElementById("delinquent-btn").addEventListener("click", openDelinquent);
+  document.getElementById("delinquent-close").addEventListener("click", () => {
+    document.getElementById("delinquent-panel").classList.add("hidden");
+  });
+  document.getElementById("delinquent-csv").addEventListener("click", delinquentCSV);
   document.addEventListener("click", (e) => {
     const el = e.target.closest(".deal-fly");
     if (!el) return;

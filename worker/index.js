@@ -35,6 +35,9 @@ export default {
     if (url.pathname === "/api/deals") {
       return handleDeals(request, env, ctx, url);
     }
+    if (url.pathname === "/api/delinquent") {
+      return handleDelinquent(request, env, url);
+    }
     if (url.pathname === "/api/checkout") {
       return handleCheckout(request, env, url);
     }
@@ -299,6 +302,56 @@ async function handleDeals(request, env, ctx, url) {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
     },
+  });
+}
+
+// Dallas County delinquent-property-tax accounts — the county's own weekly
+// "TRW" tax roll export (www.dallascounty.org/departments/tax/tax-roll.php),
+// filtered to accounts with a currently-owed balance and loaded into D1
+// offline (pipeline/work/delinquent_schema.sql + a one-off parse of the raw
+// fixed-width file — see git history for the import). No lat/lon: the TRW
+// file only carries the owner's mailing address, not the parcel's situs
+// address, so this ships as a searchable/sortable list, not a map layer.
+// Requires a DirtFound Pro token (same paywall as the Deal Sheet).
+async function handleDelinquent(request, env, url) {
+  const auth = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!(await checkToken(env, auth))) {
+    return json({ error: "subscription required" }, 402);
+  }
+
+  const q = (url.searchParams.get("q") || "").trim();
+  const limit = 500;
+
+  let results;
+  if (q) {
+    const terms = q.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean).slice(0, 6);
+    if (!terms.length) return json({ delinquent: [], total: 0 });
+    const match = terms.map((t) => `"${t}"*`).join(" ");
+    const stmt = env.OWNERS.prepare(
+      `SELECT d.account, d.owner, d.address, d.city, d.state, d.zip, d.parcel_name,
+              d.amount_due, d.years_delinquent, d.oldest_year, d.due_date, d.suit, d.causeno
+       FROM delinquent_fts f JOIN delinquent_dallas d ON d.rowid = f.rowid
+       WHERE delinquent_fts MATCH ? ORDER BY d.amount_due DESC LIMIT ?`
+    ).bind(match, limit);
+    results = (await stmt.all()).results;
+  } else {
+    const stmt = env.OWNERS.prepare(
+      `SELECT account, owner, address, city, state, zip, parcel_name,
+              amount_due, years_delinquent, oldest_year, due_date, suit, causeno
+       FROM delinquent_dallas ORDER BY amount_due DESC LIMIT ?`
+    ).bind(limit);
+    results = (await stmt.all()).results;
+  }
+
+  const totals = await env.OWNERS.prepare(
+    "SELECT COUNT(*) AS n, SUM(amount_due) AS total_owed FROM delinquent_dallas"
+  ).first();
+
+  return json({
+    delinquent: results,
+    shown: results.length,
+    total: totals?.n || 0,
+    total_owed: totals?.total_owed || 0,
   });
 }
 

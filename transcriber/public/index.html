@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>RE Video Transcriber</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #111; }
+  h1 { font-size: 20px; }
+  input[type=file] { margin: 12px 0; }
+  button { padding: 8px 16px; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #status { margin: 12px 0; color: #555; }
+  #transcript { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; border-radius: 6px; margin-top: 12px; }
+  .chunk { margin-bottom: 6px; }
+  .ts { color: #888; font-variant-numeric: tabular-nums; margin-right: 8px; }
+  #recent { margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee; }
+  #recent h2 { font-size: 14px; color: #555; }
+  #recent ul { list-style: none; padding: 0; }
+  #recent li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<h1>RE Video Transcriber</h1>
+<p>Upload a video or audio file to get a timestamped transcript.</p>
+<input type="file" id="file" accept="video/*,audio/*" />
+<br />
+<button id="go">Transcribe</button>
+<div id="status"></div>
+<div id="transcript"></div>
+
+<div id="recent">
+  <h2>Recent transcripts</h2>
+  <ul id="recentList"></ul>
+</div>
+
+<script>
+const fileInput = document.getElementById("file");
+const goBtn = document.getElementById("go");
+const statusEl = document.getElementById("status");
+const transcriptEl = document.getElementById("transcript");
+const recentEl = document.getElementById("recentList");
+
+function fmt(t) {
+  const s = Math.floor(t);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+function renderTranscript(data) {
+  transcriptEl.innerHTML = (data.segments || []).map(
+    (c) => `<div class="chunk"><span class="ts">${fmt(c.start)}</span>${c.text}</div>`
+  ).join("");
+}
+
+goBtn.addEventListener("click", async () => {
+  const file = fileInput.files[0];
+  if (!file) { statusEl.textContent = "Pick a file first."; return; }
+
+  goBtn.disabled = true;
+  transcriptEl.textContent = "";
+  statusEl.textContent = "Transcribing... (can take a bit for longer videos)";
+
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/transcribe", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Transcription failed");
+
+    statusEl.textContent = "Done.";
+    renderTranscript(data);
+    loadRecent();
+  } catch (e) {
+    statusEl.textContent = "Error: " + e.message;
+  } finally {
+    goBtn.disabled = false;
+  }
+});
+
+async function loadRecent() {
+  try {
+    const res = await fetch("/api/transcripts");
+    const data = await res.json();
+    recentEl.innerHTML = (data.transcripts || []).map(
+      (t) => `<li><a href="#" data-id="${t.id}">${t.title}</a> <span class="ts">${new Date(t.createdAt).toLocaleString()}</span></li>`
+    ).join("");
+  } catch {}
+}
+
+recentEl.addEventListener("click", async (e) => {
+  const a = e.target.closest("a[data-id]");
+  if (!a) return;
+  e.preventDefault();
+  statusEl.textContent = "Loading...";
+  const res = await fetch(`/api/transcript?id=${encodeURIComponent(a.dataset.id)}`);
+  const data = await res.json();
+  if (!res.ok) { statusEl.textContent = "Error: " + data.error; return; }
+  statusEl.textContent = "";
+  renderTranscript(data);
+});
+
+loadRecent();
+</script>
+</body>
+</html>

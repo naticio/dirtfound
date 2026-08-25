@@ -32,6 +32,9 @@ export default {
     if (url.pathname === "/api/search") {
       return handleSearch(request, env, url);
     }
+    if (url.pathname === "/api/deals") {
+      return handleDeals(request, env, ctx, url);
+    }
     return env.ASSETS.fetch(request);
   },
 };
@@ -121,6 +124,68 @@ async function handleViolations(request, ctx, url) {
       },
     }
   );
+  ctx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
+}
+
+// Deal sheet: every Dallas/Travis tax-foreclosure property joined against the
+// parcel owner database by address, so each row is call-ready. Cached 12h.
+async function handleDeals(request, env, ctx, url) {
+  const cache = caches.default;
+  const cacheKey = new Request(url.origin + "/api/deals", { method: "GET" });
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  const salesRes = await handleTaxSales(request, ctx, new URL(url.origin + "/api/taxsales"));
+  if (!salesRes.ok) return withCors(new Response("Upstream error", { status: 502 }));
+  const sales = (await salesRes.json()).features.filter((f) =>
+    f.properties.county === "DALLAS COUNTY" || f.properties.county === "TRAVIS COUNTY");
+
+  // FTS query from the street part of the address: '"4240" "ARMSTRONG" "PKWY"'
+  const ftsQuery = (addr) => {
+    const street = String(addr || "").split(",")[0]
+      .replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean).slice(0, 5);
+    return street.length >= 2 ? street.map((t) => `"${t}"`).join(" ") : null;
+  };
+
+  const deals = [];
+  for (let i = 0; i < sales.length; i += 80) {
+    const chunk = sales.slice(i, i + 80);
+    const stmts = chunk.map((f) => {
+      const q = ftsQuery(f.properties.address);
+      return env.OWNERS.prepare(
+        q
+          ? `SELECT o.name, o.addr, o.value FROM owners_fts f JOIN owners o ON o.id = f.rowid
+             WHERE owners_fts MATCH ? LIMIT 1`
+          : `SELECT NULL AS name, NULL AS addr, NULL AS value LIMIT 0`
+      ).bind(...(q ? [q] : []));
+    });
+    const results = await env.OWNERS.batch(stmts);
+    chunk.forEach((f, j) => {
+      const p = f.properties;
+      const owner = (results[j].results || [])[0] || {};
+      deals.push({
+        address: p.address, county: p.county, type: p.type, status: p.status,
+        sale_date: p.sale_date, min_bid: p.min_bid, value: p.value || owner.value || null,
+        account: p.account, cause: p.cause,
+        lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1],
+        owner: owner.name || null, owner_parcel_value: owner.value || null,
+      });
+    });
+  }
+  // Real spreads (bid + value known) rank first; date-less future sales follow by value.
+  const rank = (d) => (d.min_bid && d.value)
+    ? 1e12 + (d.value - d.min_bid)
+    : (d.value || 0);
+  deals.sort((a, b) => rank(b) - rank(a));
+
+  const response = new Response(JSON.stringify({ deals }), {
+    headers: {
+      ...CORS_HEADERS,
+      "Content-Type": "application/json",
+      "Cache-Control": "public, max-age=43200",
+    },
+  });
   ctx.waitUntil(cache.put(cacheKey, response.clone()));
   return response;
 }

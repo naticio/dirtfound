@@ -1,0 +1,462 @@
+{
+ "scraped_at": "2026-08-24T21:30:00.565Z",
+ "source": "Dallas County Clerk — dallas.tx.publicsearch.us (Foreclosures department)",
+ "county": "Dallas",
+ "sale_date_range": [
+  "20260824",
+  "20270424"
+ ],
+ "count": 50,
+ "notices": [
+  {
+   "doc_id": "314517846",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "4/23/2026",
+   "sale_date": "10/06/2026",
+   "doc_number": "202600000740",
+   "city": "RICHARDSON",
+   "url": "https://dallas.tx.publicsearch.us/doc/314517846"
+  },
+  {
+   "doc_id": "314517844",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "4/23/2026",
+   "sale_date": "10/06/2026",
+   "doc_number": "202600000734",
+   "city": "CEDAR HILL",
+   "url": "https://dallas.tx.publicsearch.us/doc/314517844"
+  },
+  {
+   "doc_id": "316861799",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/4/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001217",
+   "city": "ROWLETT",
+   "url": "https://dallas.tx.publicsearch.us/doc/316861799"
+  },
+  {
+   "doc_id": "316978635",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/11/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001271",
+   "city": "4859 CEDAR SPRINGS ROAD, DALLAS, 75219",
+   "url": "https://dallas.tx.publicsearch.us/doc/316978635"
+  },
+  {
+   "doc_id": "316978630",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/11/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001250",
+   "city": "MESQUITE",
+   "url": "https://dallas.tx.publicsearch.us/doc/316978630"
+  },
+  {
+   "doc_id": "316978613",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/11/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001256",
+   "city": "SEAGOVILLE",
+   "url": "https://dallas.tx.publicsearch.us/doc/316978613"
+  },
+  {
+   "doc_id": "316978617",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/11/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001254",
+   "city": "DALLAS",
+   "url": "https://dallas.tx.publicsearch.us/doc/316978617"
+  },
+  {
+   "doc_id": "316979512",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/11/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001295",
+   "city": "2102 PUEBLO DRIVE, GARLAND, TEXAS, 75040",
+   "url": "https://dallas.tx.publicsearch.us/doc/316979512"
+  },
+  {
+   "doc_id": "316979513",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/11/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001292",
+   "city": "9608 PARK HIGHLANDS DRIVE, DALLAS, TEXAS, 75238",
+   "url": "https://dallas.tx.publicsearch.us/doc/316979513"
+  },
+  {
+   "doc_id": "316979532",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/11/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001301",
+   "city": "2908 KELLOGG AVE, DALLAS, TEXAS, 75216",
+   "url": "https://dallas.tx.publicsearch.us/doc/316979532"
+  },
+  {
+   "doc_id": "316979517",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/11/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001302",
+   "city": "2125 OSAGE TRAIL, GRAND PRAIRIE, TEXAS, 75052",
+   "url": "https://dallas.tx.publicsearch.us/doc/316979517"
+  },
+  {
+   "doc_id": "316978626",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/11/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001251",
+   "city": "MESQUITE",
+   "url": "https://dallas.tx.publicsearch.us/doc/316978626"
+  },
+  {
+   "doc_id": "316979529",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/11/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001300",
+   "city": "616 MAGNOLIA TRAIL, DESOTO, TEXAS, 75115",
+   "url": "https://dallas.tx.publicsearch.us/doc/316979529"
+  },
+  {
+   "doc_id": "317702471",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/15/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001348",
+   "city": "DALLAS",
+   "url": "https://dallas.tx.publicsearch.us/doc/317702471"
+  },
+  {
+   "doc_id": "317702476",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/15/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001350",
+   "city": "2505 STOCKTON DRIVE, SEAGOVILLE, TEXAS, 75159",
+   "url": "https://dallas.tx.publicsearch.us/doc/317702476"
+  },
+  {
+   "doc_id": "317702461",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/15/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001343",
+   "city": "DALLAS",
+   "url": "https://dallas.tx.publicsearch.us/doc/317702461"
+  },
+  {
+   "doc_id": "317702462",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/15/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001342",
+   "city": "1585 EAST KIEST BOULEVARD, DALLAS, TEXAS, 75216",
+   "url": "https://dallas.tx.publicsearch.us/doc/317702462"
+  },
+  {
+   "doc_id": "318067794",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/16/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001384",
+   "city": "SACHSE",
+   "url": "https://dallas.tx.publicsearch.us/doc/318067794"
+  },
+  {
+   "doc_id": "318070284",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/16/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001402",
+   "city": "DALLAS",
+   "url": "https://dallas.tx.publicsearch.us/doc/318070284"
+  },
+  {
+   "doc_id": "318070279",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/16/2026",
+   "sale_date": "09/02/2026",
+   "doc_number": "202600001407",
+   "city": "MESQUITE",
+   "url": "https://dallas.tx.publicsearch.us/doc/318070279"
+  },
+  {
+   "doc_id": "321393457",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "7/9/2026",
+   "sale_date": "10/06/2026",
+   "doc_number": "202600001610",
+   "city": "709 VIA DEL REY, MESQUITE, TEXAS, 75150",
+   "url": "https://dallas.tx.publicsearch.us/doc/321393457"
+  },
+  {
+   "doc_id": "321393451",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "7/9/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001613",
+   "city": "4615 WADSWORTH DRIVE, DALLAS, TEXAS, 75216",
+   "url": "https://dallas.tx.publicsearch.us/doc/321393451"
+  },
+  {
+   "doc_id": "321393466",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "7/9/2026",
+   "sale_date": "10/06/2026",
+   "doc_number": "202600001621",
+   "city": "LANCASTER",
+   "url": "https://dallas.tx.publicsearch.us/doc/321393466"
+  },
+  {
+   "doc_id": "319104351",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/18/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001434",
+   "city": "N/A",
+   "url": "https://dallas.tx.publicsearch.us/doc/319104351"
+  },
+  {
+   "doc_id": "319108705",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/18/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001437",
+   "city": "2508 RUGBY LANE, DALLAS, TEXAS, 75234",
+   "url": "https://dallas.tx.publicsearch.us/doc/319108705"
+  },
+  {
+   "doc_id": "319108704",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/18/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001443",
+   "city": "2815 SUTTON ST, DALLAS, TEXAS, 75210",
+   "url": "https://dallas.tx.publicsearch.us/doc/319108704"
+  },
+  {
+   "doc_id": "321017356",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001481",
+   "city": "542 DELPHINIUM DRIVE, DALLAS, TEXAS, 75217",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017356"
+  },
+  {
+   "doc_id": "321017351",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001490",
+   "city": "1410 WEST ILLINOIS AVENUE, DALLAS, TEXAS, 75224",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017351"
+  },
+  {
+   "doc_id": "321017355",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001479",
+   "city": "326 CEDAR CREEK DRIVE, DUNCANVILLE, TEXAS, 75137",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017355"
+  },
+  {
+   "doc_id": "321017361",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001478",
+   "city": "5312 ERIN LANE, GRAND PRAIRIE, TEXAS, 75052",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017361"
+  },
+  {
+   "doc_id": "321017364",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001480",
+   "city": "3515 PATIENCE BLVD, DALLAS, TEXAS, 75236",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017364"
+  },
+  {
+   "doc_id": "321017369",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001511",
+   "city": "DUNCANVILLE",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017369"
+  },
+  {
+   "doc_id": "321017380",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001505",
+   "city": "GRAND PRAIRIE",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017380"
+  },
+  {
+   "doc_id": "321017375",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001497",
+   "city": "2027 FAIR WEATHER DRIVE, LANCASTER, TEXAS, 75146",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017375"
+  },
+  {
+   "doc_id": "321017362",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001485",
+   "city": "2712 CRYSTAL FALLS DRIVE, MESQUITE, TEXAS, 75181",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017362"
+  },
+  {
+   "doc_id": "321017357",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001483",
+   "city": "2453 TELEGRAPH AVENUE, DALLAS, TEXAS, 75228",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017357"
+  },
+  {
+   "doc_id": "321017360",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001486",
+   "city": "2015 CANTERBURY DRIVE, SEAGOVILLE, TEXAS, 75159",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017360"
+  },
+  {
+   "doc_id": "321017378",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001487",
+   "city": "7951 TEXRIDGE DRIVE, DALLAS, TEXAS, 75232",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017378"
+  },
+  {
+   "doc_id": "321017374",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001506",
+   "city": "MESQUITE",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017374"
+  },
+  {
+   "doc_id": "321017352",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001493",
+   "city": "1319 HOLT  AVENUE, DESOTO, TEXAS, 75115",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017352"
+  },
+  {
+   "doc_id": "321017372",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001503",
+   "city": "9157 DONNYBROOK LANE, DALLAS, TEXAS, 75217",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017372"
+  },
+  {
+   "doc_id": "321017358",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001492",
+   "city": "3113 GLENDALE DRIVE, GRAND PRAIRIE, TEXAS, 75052",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017358"
+  },
+  {
+   "doc_id": "321017359",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001484",
+   "city": "517 CLARK STREET, GARLAND, TEXAS, 75040",
+   "url": "https://dallas.tx.publicsearch.us/doc/321017359"
+  },
+  {
+   "doc_id": "321015878",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001448",
+   "city": "2828 HOUSLEY DRIVE, DALLAS, TEXAS, 75228",
+   "url": "https://dallas.tx.publicsearch.us/doc/321015878"
+  },
+  {
+   "doc_id": "321015901",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001467",
+   "city": "ROWLETT",
+   "url": "https://dallas.tx.publicsearch.us/doc/321015901"
+  },
+  {
+   "doc_id": "321015894",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001465",
+   "city": "DALLAS",
+   "url": "https://dallas.tx.publicsearch.us/doc/321015894"
+  },
+  {
+   "doc_id": "321015886",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001474",
+   "city": "DALLAS",
+   "url": "https://dallas.tx.publicsearch.us/doc/321015886"
+  },
+  {
+   "doc_id": "321015892",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001476",
+   "city": "401 GUADALAJARA CIRCLE, IRVING, TEXAS, 75062",
+   "url": "https://dallas.tx.publicsearch.us/doc/321015892"
+  },
+  {
+   "doc_id": "321015893",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001471",
+   "city": "726 CEDARWOOD DRIVE, CEDAR HILL, TEXAS, 75104",
+   "url": "https://dallas.tx.publicsearch.us/doc/321015893"
+  },
+  {
+   "doc_id": "321015881",
+   "doc_type": "NOTICE OF FORECLOSURE",
+   "recorded": "6/25/2026",
+   "sale_date": "09/01/2026",
+   "doc_number": "202600001468",
+   "city": "MESQUITE",
+   "url": "https://dallas.tx.publicsearch.us/doc/321015881"
+  }
+ ]
+}

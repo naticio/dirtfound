@@ -44,6 +44,7 @@
     </label>
 
     <button class="fbtn primary" id="export-csv" type="button">Export CSV</button>
+    <button class="fbtn primary" id="deal-sheet-btn" type="button">💰 Deal Sheet</button>
 
     <span class="fcount" id="result-count"></span>
     <div class="progress hidden" id="progress"><div class="progress-bar"></div></div>
@@ -69,6 +70,18 @@
     <div class="legend-violations hidden" id="legend-taxsales">
       <span class="vdot tdot"></span>Tax foreclosure sale
     </div>
+  </div>
+
+  <div class="dealsheet hidden" id="dealsheet">
+    <div class="dealsheet-head">
+      <h2>💰 Deal Sheet — tax-foreclosure properties, Dallas &amp; Travis</h2>
+      <button class="fbtn" id="deals-csv" type="button">Download CSV</button>
+      <button class="dealsheet-close" id="dealsheet-close" type="button">×</button>
+    </div>
+    <p class="dealsheet-note">Sorted by spread (assessed value − minimum bid). Every row joined
+    to the owner on the tax roll. Check lot size on DCAD before falling in love —
+    big spread on a tiny lot means it's a sliver.</p>
+    <div class="dealsheet-body" id="dealsheet-body">Loading…</div>
   </div>
 
   <div class="panel credits">

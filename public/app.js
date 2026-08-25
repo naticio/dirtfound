@@ -737,6 +737,89 @@
     ].filter(Boolean).join("<br>");
   }
 
+  // ---- Deal Sheet (the whole tax-sale call list, joined to owners) ------
+
+  let dealsCache = null;
+
+  function tpsLink(ownerName) {
+    const raw = String(ownerName || "").split(";")[0].split("&")[0].trim();
+    if (!raw || ENTITY_RE.test(raw)) return null;
+    const parts = raw.split(/\s+/);
+    const flipped = parts.length > 1 ? parts.slice(1).join(" ") + " " + parts[0] : raw;
+    return `https://www.truepeoplesearch.com/results?name=${encodeURIComponent(flipped)}&citystatezip=TX`;
+  }
+
+  async function openDealSheet() {
+    const panel = document.getElementById("dealsheet");
+    const body = document.getElementById("dealsheet-body");
+    panel.classList.remove("hidden");
+    if (!dealsCache) {
+      body.textContent = "Building the deal sheet — joining tax sales to owners…";
+      busy(true);
+      try {
+        const res = await fetch("/api/deals");
+        dealsCache = (await res.json()).deals || [];
+      } catch (err) {
+        body.textContent = "Failed to load — try again.";
+        busy(false);
+        return;
+      }
+      busy(false);
+    }
+    const rows = dealsCache.map((d, i) => {
+      const spread = (d.min_bid && d.value) ? d.value - d.min_bid : null;
+      const tps = tpsLink(d.owner);
+      const links = [
+        tps ? `<a href="${tps}" target="_blank" rel="noopener">📞</a>` : "",
+        d.county === "DALLAS COUNTY" && d.account
+          ? `<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(d.account)}" target="_blank" rel="noopener">📜</a>` : "",
+        `<a href="#" class="deal-fly" data-i="${i}">🗺️</a>`,
+      ].filter(Boolean).join(" ");
+      return `<tr>
+        <td>${esc(d.address || "")}</td>
+        <td>${esc((d.type || "").toLowerCase())}</td>
+        <td>${esc(d.sale_date || "—")}</td>
+        <td class="num">${d.min_bid ? fmtUSD.format(d.min_bid) : "—"}</td>
+        <td class="num">${d.value ? fmtUSD.format(d.value) : "—"}</td>
+        <td class="num"><strong>${spread !== null && spread > 0 ? fmtUSD.format(spread) : "—"}</strong></td>
+        <td>${esc(d.owner || "?")}</td>
+        <td class="deal-links">${links}</td>
+      </tr>`;
+    }).join("");
+    body.innerHTML = `<table class="deal-table">
+      <thead><tr><th>Property</th><th>Type</th><th>Sale date</th><th>Min bid</th>
+      <th>Value</th><th>Spread</th><th>Owner</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  }
+
+  function dealsCSV() {
+    if (!dealsCache) return;
+    const cols = ["address", "county", "type", "status", "sale_date", "min_bid",
+      "value", "owner", "account", "cause"];
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [cols.concat("spread").join(",")].concat(dealsCache.map((d) =>
+      cols.map((c) => q(d[c])).concat(q(d.min_bid && d.value ? d.value - d.min_bid : "")).join(","))).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = "dirtfound-deal-sheet.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  document.getElementById("deal-sheet-btn").addEventListener("click", openDealSheet);
+  document.getElementById("dealsheet-close").addEventListener("click", () =>
+    document.getElementById("dealsheet").classList.add("hidden"));
+  document.getElementById("deals-csv").addEventListener("click", dealsCSV);
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest(".deal-fly");
+    if (!el) return;
+    e.preventDefault();
+    const d = dealsCache && dealsCache[Number(el.dataset.i)];
+    if (!d) return;
+    document.getElementById("dealsheet").classList.add("hidden");
+    map.flyTo({ center: [d.lon, d.lat], zoom: 16 });
+  });
+
   // ---- Zoom-dependent legends -----------------------------------------
 
   function wireLegends() {

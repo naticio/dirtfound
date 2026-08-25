@@ -273,7 +273,15 @@
       // Violations sit on top, then parcels, then counties when zoomed out.
       let html = null;
       let annotateWith = null;
-      if (map.getLayer("search-results")) {
+      if (map.getLayer("deals-dots") &&
+          map.getLayoutProperty("deals-dots", "visibility") !== "none") {
+        const dd = map.queryRenderedFeatures(e.point, { layers: ["deals-dots"] });
+        if (dd.length) {
+          const p = dd[0].properties;
+          html = taxSalePopupHTML(p) + (p.owner ? `<br>Owner: ${esc(p.owner)}` : "");
+        }
+      }
+      if (!html && map.getLayer("search-results")) {
         const s = map.queryRenderedFeatures(e.point, { layers: ["search-results"] });
         if (s.length) { html = searchResultPopupHTML(s[0].properties); annotateWith = s[0].properties.addr; }
       }
@@ -836,6 +844,44 @@
     renderDeals();
   }
 
+
+  function updateDealsLayer(rows) {
+    const features = rows
+      .filter((d) => isFinite(d.lon) && isFinite(d.lat))
+      .map((d) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [d.lon, d.lat] },
+        properties: d,
+      }));
+    const data = { type: "FeatureCollection", features };
+    if (map.getSource("deals")) {
+      map.getSource("deals").setData(data);
+    } else {
+      map.addSource("deals", { type: "geojson", data });
+      map.addLayer({
+        id: "deals-dots",
+        type: "circle",
+        source: "deals",
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 4.5, 10, 7, 14, 10],
+          "circle-color": "#eab308",
+          "circle-stroke-color": "#1f2937",
+          "circle-stroke-width": 2,
+          "circle-opacity": 0.95,
+        },
+      });
+    }
+    map.setLayoutProperty("deals-dots", "visibility", "visible");
+    if (features.length) {
+      const b = features.reduce(
+        (acc, f) => acc.extend(f.geometry.coordinates),
+        new maplibregl.LngLatBounds(features[0].geometry.coordinates, features[0].geometry.coordinates));
+      // Keep the fitted view clear of the docked panel on the right.
+      const panelW = document.getElementById("dealsheet").getBoundingClientRect().width || 0;
+      map.fitBounds(b, { padding: { top: 100, bottom: 60, left: 60, right: panelW + 60 }, maxZoom: 13 });
+    }
+  }
+
   function dealRows() {
     const spreadOf = (d) => (d.min_bid && d.value) ? d.value - d.min_bid : null;
     let rows = dealsCache.filter((d) =>
@@ -861,6 +907,7 @@
   function renderDeals() {
     const body = document.getElementById("dealsheet-body");
     const rows = dealRows();
+    updateDealsLayer(rows);
     const arrow = (col) => dealState.sort === col ? (dealState.dir < 0 ? " \u25BC" : " \u25B2") : "";
     const controls = `<div class="deal-controls">
       <select id="dc-county">
@@ -887,26 +934,22 @@
           ? `<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(d.account)}" target="_blank" rel="noopener">\u{1F4DC}</a>` : "",
         `<a href="#" class="deal-fly" data-addr="${esc(d.address || "")}" data-lon="${d.lon}" data-lat="${d.lat}">\u{1F5FA}\uFE0F</a>`,
       ].filter(Boolean).join(" ");
+      const sub = [(d.type || "").toLowerCase(), d.sale_date || null]
+        .filter(Boolean).join(" \u00b7 ");
       return `<tr>
-        <td>${esc(d.address || "")}</td>
-        <td>${esc((d.type || "").toLowerCase())}</td>
-        <td>${esc(d.sale_date || "\u2014")}</td>
+        <td>${esc(d.address || "")}<div class="deal-sub">${esc(sub)} \u00b7 ${esc(d.owner || "?")}</div></td>
         <td class="num">${d.min_bid ? fmtUSD.format(d.min_bid) : "\u2014"}</td>
         <td class="num">${d.value ? fmtUSD.format(d.value) : "\u2014"}</td>
         <td class="num"><strong>${spread !== null && spread > 0 ? fmtUSD.format(spread) : "\u2014"}</strong></td>
-        <td>${esc(d.owner || "?")}</td>
         <td class="deal-links">${links}</td>
       </tr>`;
     }).join("");
     body.innerHTML = controls + `<table class="deal-table">
       <thead><tr>
         <th data-sort="address">Property${arrow("address")}</th>
-        <th data-sort="">Type</th>
-        <th data-sort="sale_date">Sale date${arrow("sale_date")}</th>
         <th data-sort="min_bid">Min bid${arrow("min_bid")}</th>
         <th data-sort="value">Value${arrow("value")}</th>
-        <th data-sort="spread">Spread${arrow("spread")}</th>
-        <th data-sort="owner">Owner${arrow("owner")}</th><th></th>
+        <th data-sort="spread">Spread${arrow("spread")}</th><th></th>
       </tr></thead><tbody>${tr}</tbody></table>`;
 
     document.getElementById("dc-county").addEventListener("change", (e) => { dealState.county = e.target.value; renderDeals(); });
@@ -939,14 +982,15 @@
   }
 
   document.getElementById("deal-sheet-btn").addEventListener("click", openDealSheet);
-  document.getElementById("dealsheet-close").addEventListener("click", () =>
-    document.getElementById("dealsheet").classList.add("hidden"));
+  document.getElementById("dealsheet-close").addEventListener("click", () => {
+    document.getElementById("dealsheet").classList.add("hidden");
+    if (map.getLayer("deals-dots")) map.setLayoutProperty("deals-dots", "visibility", "none");
+  });
   document.getElementById("deals-csv").addEventListener("click", dealsCSV);
   document.addEventListener("click", (e) => {
     const el = e.target.closest(".deal-fly");
     if (!el) return;
     e.preventDefault();
-    document.getElementById("dealsheet").classList.add("hidden");
     map.flyTo({ center: [Number(el.dataset.lon), Number(el.dataset.lat)], zoom: 16 });
   });
 

@@ -825,6 +825,67 @@
     } finally { busy(false); }
   })();
 
+  // ---- Restore access: email magic link -------------------------------
+
+  // Returning from a magic-link email: ?restored=<token> or ?restore_error=1.
+  (() => {
+    const params = new URLSearchParams(location.search);
+    const restored = params.get("restored");
+    const err = params.get("restore_error");
+    if (!restored && !err) return;
+    history.replaceState(null, "", location.pathname + location.hash);
+    if (restored) {
+      localStorage.setItem("df_token", restored);
+      alert("DirtFound Pro access restored on this device.");
+    } else {
+      alert("That login link is invalid or expired — request a new one.");
+    }
+  })();
+
+  function restoreAccessHTML() {
+    return `<div class="paywall">
+      <div class="paywall-icon">🔑</div>
+      <h3>Restore Access</h3>
+      <p>Already a DirtFound Pro subscriber? Enter the email you subscribed with
+      and we'll send a login link to get you back in on this device.</p>
+      <input type="email" id="restore-email" placeholder="you@example.com"
+        style="width:100%;padding:8px;margin:8px 0;box-sizing:border-box">
+      <button class="fbtn primary paywall-btn" id="restore-send">Send login link</button>
+      <p class="paywall-small" id="restore-status"></p>
+    </div>`;
+  }
+
+  function openRestoreAccess() {
+    const modal = document.getElementById("restore-modal");
+    document.getElementById("restore-modal-body").innerHTML = restoreAccessHTML();
+    modal.classList.remove("hidden");
+  }
+
+  document.addEventListener("click", async (e) => {
+    if (e.target.closest("#restore-access-btn")) { openRestoreAccess(); return; }
+    if (e.target.closest("#restore-modal-close")) {
+      document.getElementById("restore-modal").classList.add("hidden");
+      return;
+    }
+    if (e.target.closest("#restore-send")) {
+      const email = document.getElementById("restore-email").value.trim();
+      const status = document.getElementById("restore-status");
+      if (!email) return;
+      status.textContent = "Sending…";
+      try {
+        const res = await fetch("/api/login/request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const d = await res.json();
+        status.textContent = d.message || "Check your email for a login link.";
+      } catch {
+        status.textContent = "Something went wrong — try again.";
+      }
+    }
+  });
+
   async function openDealSheet() {
     const panel = document.getElementById("dealsheet");
     const body = document.getElementById("dealsheet-body");

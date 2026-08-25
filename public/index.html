@@ -46,6 +46,7 @@
     <button class="fbtn primary" id="export-csv" type="button">Export CSV</button>
     <button class="fbtn primary" id="deal-sheet-btn" type="button">💰 Deal Sheet</button>
     <button class="fbtn primary" id="delinquent-btn" type="button">🧾 Delinquent Tax</button>
+    <button class="fbtn" id="restore-access-btn" type="button">🔑 Restore Access</button>
 
     <span class="fcount" id="result-count"></span>
     <div class="progress hidden" id="progress"><div class="progress-bar"></div></div>
@@ -97,6 +98,13 @@
     auction list yet. No property address in the source file, only the owner's mailing
     address — verify the parcel on DCAD before reaching out.</p>
     <div class="dealsheet-body" id="delinquent-body">Loading…</div>
+  </div>
+
+  <div class="modal-overlay hidden" id="restore-modal">
+    <div class="modal-box">
+      <button class="dealsheet-close" id="restore-modal-close" type="button">×</button>
+      <div id="restore-modal-body"></div>
+    </div>
   </div>
 
   <div class="panel credits">

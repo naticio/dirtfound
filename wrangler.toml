@@ -24,3 +24,10 @@ bucket_name = "parcel-data"
 binding = "OWNERS"
 database_name = "dirtfound-owners"
 database_id = "d56d9f2b-15ab-47a1-a1c2-a30c008b30d5"
+
+# One-time email magic-link login tokens (short TTL) — lets a Pro subscriber
+# restore access on a new browser/device. Secret to set: RESEND_API_KEY
+# (resend.com, free tier). "from" domain must be verified in Resend first.
+[[kv_namespaces]]
+binding = "LOGIN_TOKENS"
+id = "b419b6919a7a4f1f98a23e893398e40e"

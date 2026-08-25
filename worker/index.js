@@ -44,6 +44,12 @@ export default {
     if (url.pathname === "/api/activate") {
       return handleActivate(request, env, url);
     }
+    if (url.pathname === "/api/login/request") {
+      return handleLoginRequest(request, env, url);
+    }
+    if (url.pathname === "/api/login/verify") {
+      return handleLoginVerify(request, env, url);
+    }
     return env.ASSETS.fetch(request);
   },
 };
@@ -147,6 +153,14 @@ const json = (obj, status = 200) =>
     status, headers: { "Content-Type": "application/json" },
   }));
 
+async function safeJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
+
 async function hmac(env, msg) {
   const key = await crypto.subtle.importKey("raw",
     new TextEncoder().encode(env.SIGNING_SECRET),
@@ -223,6 +237,96 @@ async function handleActivate(request, env, url) {
     return json({ error: "subscription inactive" }, 402);
   }
   return json({ token: await makeToken(env, subId) });
+}
+
+// ---- Restore access: email magic link (Stripe is the source of truth for
+// "is this email an active Pro subscriber", Resend delivers the link) ----
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LOGIN_TOKEN_TTL_S = 15 * 60;
+
+function randomToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Finds an active/trialing/past_due subscription for this email, if any.
+// Returns a Stripe subscription id or null. Checks every matching customer
+// (a person may have checked out more than once under the same email).
+async function findActiveSubForEmail(env, email) {
+  const { ok, data } = await stripeAPI(env, "GET",
+    `/customers?email=${encodeURIComponent(email)}&limit=20`);
+  if (!ok || !data.data?.length) return null;
+  for (const customer of data.data) {
+    const subsRes = await stripeAPI(env, "GET",
+      `/subscriptions?customer=${encodeURIComponent(customer.id)}&status=all&limit=10`);
+    if (!subsRes.ok) continue;
+    const active = (subsRes.data.data || []).find((s) =>
+      ["active", "trialing", "past_due"].includes(s.status));
+    if (active) return active.id;
+  }
+  return null;
+}
+
+async function sendMagicLinkEmail(env, to, link) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: "DirtFound <login@dirtfound.com>",
+      to,
+      subject: "Your DirtFound login link",
+      html: `<p>Click below to restore your DirtFound Pro access on this device:</p>
+             <p><a href="${link}">${link}</a></p>
+             <p>This link expires in 15 minutes and works once. If you didn't request
+             this, you can ignore this email — no one can access your account without
+             clicking the link in your inbox.</p>`,
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+async function handleLoginRequest(request, env, url) {
+  const { email } = (await safeJson(request)) || {};
+  const clean = String(email || "").trim().toLowerCase();
+  // Always return the same generic response whether or not the email
+  // matches a subscriber, so this endpoint can't be used to enumerate
+  // who's paying for DirtFound Pro.
+  const generic = json({ ok: true, message: "If that email has an active DirtFound Pro subscription, a login link is on its way." });
+  if (!EMAIL_RE.test(clean)) return generic;
+
+  const throttleKey = `throttle:${clean}`;
+  if (await env.LOGIN_TOKENS.get(throttleKey)) return generic;
+  await env.LOGIN_TOKENS.put(throttleKey, "1", { expirationTtl: 300 });
+
+  const subId = await findActiveSubForEmail(env, clean);
+  if (!subId) return generic;
+
+  const token = randomToken();
+  await env.LOGIN_TOKENS.put(`magic:${token}`, subId, { expirationTtl: LOGIN_TOKEN_TTL_S });
+  const link = `${url.origin}/api/login/verify?token=${token}`;
+  try {
+    await sendMagicLinkEmail(env, clean, link);
+  } catch (e) {
+    // Swallow send failures behind the generic response too — the caller
+    // shouldn't learn anything from timing/error differences either.
+  }
+  return generic;
+}
+
+async function handleLoginVerify(request, env, url) {
+  const token = url.searchParams.get("token") || "";
+  const key = `magic:${token}`;
+  const subId = token && await env.LOGIN_TOKENS.get(key);
+  if (!subId) return Response.redirect(`${url.origin}/?restore_error=1`, 302);
+  await env.LOGIN_TOKENS.delete(key); // one-time use
+
+  const { ok, data } = await stripeAPI(env, "GET", `/subscriptions/${encodeURIComponent(subId)}`);
+  if (!ok || !["active", "trialing", "past_due"].includes(data.status)) {
+    return Response.redirect(`${url.origin}/?restore_error=1`, 302);
+  }
+  const dfToken = await makeToken(env, subId);
+  return Response.redirect(`${url.origin}/?restored=${encodeURIComponent(dfToken)}`, 302);
 }
 
 // Deal sheet: every Dallas/Travis tax-foreclosure property joined against the

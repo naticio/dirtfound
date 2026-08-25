@@ -136,7 +136,7 @@ async function handleViolations(request, ctx, url) {
 
 // ---- DirtFound Pro paywall (Stripe subscription + signed access tokens) ----
 
-const PRICE_ID = "price_1U8Ck38mY0qSfHMDyzoDL02W"; // DirtFound Pro, $29/mo
+const PRICE_ID = "price_1U8D3P8mY0qSfHMD3GODE32z"; // DirtFound Pro, $100/mo
 const TOKEN_TTL_S = 30 * 24 * 3600; // re-verified against Stripe on expiry
 
 const json = (obj, status = 200) =>

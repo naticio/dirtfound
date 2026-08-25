@@ -778,7 +778,7 @@
       <p>The Deal Sheet joins every Dallas &amp; Travis tax-foreclosure listing to its
       owner on the tax roll — sorted by spread, phone-lookup ready, refreshed every
       12 hours, with CSV export.</p>
-      <button class="fbtn primary paywall-btn" id="paywall-buy">Unlock — $29/month</button>
+      <button class="fbtn primary paywall-btn" id="paywall-buy">Unlock — $100/month</button>
       <p class="paywall-small">Stripe checkout · cancel anytime · already subscribed on
       this browser? Access restores automatically after checkout.</p>
     </div>`;

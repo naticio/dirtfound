@@ -233,7 +233,13 @@ async function handleDeals(request, env, ctx, url) {
   const cache = caches.default;
   const cacheKey = new Request(url.origin + "/api/deals", { method: "GET" });
   const cached = await cache.match(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    // Serve from edge cache but forbid the browser from storing it — access
+    // must be re-checked against the token on every request.
+    const resp = new Response(cached.body, cached);
+    resp.headers.set("Cache-Control", "no-store");
+    return resp;
+  }
 
   const salesRes = await handleTaxSales(request, ctx, new URL(url.origin + "/api/taxsales"));
   if (!salesRes.ok) return withCors(new Response("Upstream error", { status: 502 }));
@@ -278,15 +284,22 @@ async function handleDeals(request, env, ctx, url) {
     : (d.value || 0);
   deals.sort((a, b) => rank(b) - rank(a));
 
-  const response = new Response(JSON.stringify({ deals }), {
+  const body = JSON.stringify({ deals });
+  const edgeCopy = new Response(body, {
     headers: {
       ...CORS_HEADERS,
       "Content-Type": "application/json",
       "Cache-Control": "public, max-age=43200",
     },
   });
-  ctx.waitUntil(cache.put(cacheKey, response.clone()));
-  return response;
+  ctx.waitUntil(cache.put(cacheKey, edgeCopy));
+  return new Response(body, {
+    headers: {
+      ...CORS_HEADERS,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 // Owner-name search over all parcels (D1 + FTS5). Word-prefix matching:

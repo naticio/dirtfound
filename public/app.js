@@ -755,6 +755,7 @@
   async function fetchDeals() {
     const res = await fetch("/api/deals", {
       headers: { Authorization: "Bearer " + getToken() },
+      cache: "no-store",
     });
     if (res.status === 402) return { paywall: true };
     return { deals: (await res.json()).deals || [] };

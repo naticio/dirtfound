@@ -31,9 +31,11 @@ window.APP_CONFIG = {
 
   basemapStyle: "https://tiles.openfreemap.org/styles/positron",
 
-  // Initial view: statewide, so the county choropleth tells the story first.
-  center: [-99.3, 31.3],
-  zoom: 5.2,
+  // Initial view: still wide enough for the county choropleth to tell the
+  // story first, but centered toward North Texas / Dallas rather than
+  // dead-center state.
+  center: [-97.3, 31.9],
+  zoom: 6.2,
 
   // Zoom at which counties fade out and parcels take over.
   handoffZoom: 10,

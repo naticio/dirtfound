@@ -740,6 +740,7 @@
   // ---- Deal Sheet (the whole tax-sale call list, joined to owners) ------
 
   let dealsCache = null;
+  const dealState = { sort: "spread", dir: -1, county: "", type: "", minSpread: null, ownerOnly: false };
 
   function tpsLink(ownerName) {
     const raw = String(ownerName || "").split(";")[0].split("&")[0].trim();
@@ -749,47 +750,177 @@
     return `https://www.truepeoplesearch.com/results?name=${encodeURIComponent(flipped)}&citystatezip=TX`;
   }
 
+  const getToken = () => localStorage.getItem("df_token") || "";
+
+  async function fetchDeals() {
+    const res = await fetch("/api/deals", {
+      headers: { Authorization: "Bearer " + getToken() },
+    });
+    if (res.status === 402) return { paywall: true };
+    return { deals: (await res.json()).deals || [] };
+  }
+
+  async function tryRenew() {
+    const t = getToken();
+    if (!t) return false;
+    try {
+      const res = await fetch("/api/activate?renew=" + encodeURIComponent(t));
+      if (!res.ok) return false;
+      localStorage.setItem("df_token", (await res.json()).token);
+      return true;
+    } catch { return false; }
+  }
+
+  function paywallHTML() {
+    return `<div class="paywall">
+      <div class="paywall-icon">💰🔒</div>
+      <h3>DirtFound Pro</h3>
+      <p>The Deal Sheet joins every Dallas &amp; Travis tax-foreclosure listing to its
+      owner on the tax roll — sorted by spread, phone-lookup ready, refreshed every
+      12 hours, with CSV export.</p>
+      <button class="fbtn primary paywall-btn" id="paywall-buy">Unlock — $29/month</button>
+      <p class="paywall-small">Stripe checkout · cancel anytime · already subscribed on
+      this browser? Access restores automatically after checkout.</p>
+    </div>`;
+  }
+
+  async function startCheckout() {
+    busy(true);
+    try {
+      const res = await fetch("/api/checkout");
+      const d = await res.json();
+      if (d.url) { location.href = d.url; return; }
+      document.getElementById("dealsheet-body").textContent = d.error || "Checkout failed.";
+    } catch {
+      document.getElementById("dealsheet-body").textContent = "Checkout failed — try again.";
+    } finally { busy(false); }
+  }
+
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#paywall-buy")) startCheckout();
+  });
+
+  // Returning from Stripe: ?checkout=cs_... → exchange for an access token.
+  (async () => {
+    const cs = new URLSearchParams(location.search).get("checkout");
+    if (!cs) return;
+    history.replaceState(null, "", location.pathname + location.hash);
+    busy(true);
+    try {
+      const res = await fetch("/api/activate?session_id=" + encodeURIComponent(cs));
+      if (res.ok) {
+        localStorage.setItem("df_token", (await res.json()).token);
+        openDealSheet();
+      }
+    } finally { busy(false); }
+  })();
+
   async function openDealSheet() {
     const panel = document.getElementById("dealsheet");
     const body = document.getElementById("dealsheet-body");
     panel.classList.remove("hidden");
     if (!dealsCache) {
-      body.textContent = "Building the deal sheet — joining tax sales to owners…";
+      body.textContent = "Loading…";
       busy(true);
       try {
-        const res = await fetch("/api/deals");
-        dealsCache = (await res.json()).deals || [];
-      } catch (err) {
+        let r = await fetchDeals();
+        if (r.paywall && (await tryRenew())) r = await fetchDeals();
+        if (r.paywall) { body.innerHTML = paywallHTML(); return; }
+        dealsCache = r.deals;
+      } catch {
         body.textContent = "Failed to load — try again.";
-        busy(false);
         return;
-      }
-      busy(false);
+      } finally { busy(false); }
     }
-    const rows = dealsCache.map((d, i) => {
+    renderDeals();
+  }
+
+  function dealRows() {
+    const spreadOf = (d) => (d.min_bid && d.value) ? d.value - d.min_bid : null;
+    let rows = dealsCache.filter((d) =>
+      (!dealState.county || d.county === dealState.county) &&
+      (!dealState.type || d.type === dealState.type) &&
+      (!dealState.ownerOnly || d.owner) &&
+      (dealState.minSpread === null || (spreadOf(d) ?? -1) >= dealState.minSpread));
+    const key = {
+      spread: (d) => spreadOf(d) ?? -1,
+      value: (d) => d.value || 0,
+      min_bid: (d) => d.min_bid || 0,
+      sale_date: (d) => d.sale_date || "",
+      address: (d) => d.address || "",
+      owner: (d) => d.owner || "\uffff",
+    }[dealState.sort];
+    rows.sort((a, b) => {
+      const ka = key(a), kb = key(b);
+      return (ka < kb ? -1 : ka > kb ? 1 : 0) * dealState.dir;
+    });
+    return rows;
+  }
+
+  function renderDeals() {
+    const body = document.getElementById("dealsheet-body");
+    const rows = dealRows();
+    const arrow = (col) => dealState.sort === col ? (dealState.dir < 0 ? " \u25BC" : " \u25B2") : "";
+    const controls = `<div class="deal-controls">
+      <select id="dc-county">
+        <option value="">All counties</option>
+        <option${dealState.county === "DALLAS COUNTY" ? " selected" : ""} value="DALLAS COUNTY">Dallas</option>
+        <option${dealState.county === "TRAVIS COUNTY" ? " selected" : ""} value="TRAVIS COUNTY">Travis</option>
+      </select>
+      <select id="dc-type">
+        <option value="">All types</option>
+        ${["SALE", "RESALE", "STRUCK OFF", "FUTURE SALE"].map((t) =>
+          `<option${dealState.type === t ? " selected" : ""} value="${t}">${t.toLowerCase()}</option>`).join("")}
+      </select>
+      <label>Min spread $ <input type="number" id="dc-spread" step="25000" min="0"
+        value="${dealState.minSpread ?? ""}" placeholder="0"></label>
+      <label><input type="checkbox" id="dc-owner"${dealState.ownerOnly ? " checked" : ""}> owner matched</label>
+      <span class="deal-count">${fmtInt.format(rows.length)} deals</span>
+    </div>`;
+    const tr = rows.map((d) => {
       const spread = (d.min_bid && d.value) ? d.value - d.min_bid : null;
       const tps = tpsLink(d.owner);
       const links = [
-        tps ? `<a href="${tps}" target="_blank" rel="noopener">📞</a>` : "",
+        tps ? `<a href="${tps}" target="_blank" rel="noopener">\u{1F4DE}</a>` : "",
         d.county === "DALLAS COUNTY" && d.account
-          ? `<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(d.account)}" target="_blank" rel="noopener">📜</a>` : "",
-        `<a href="#" class="deal-fly" data-i="${i}">🗺️</a>`,
+          ? `<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(d.account)}" target="_blank" rel="noopener">\u{1F4DC}</a>` : "",
+        `<a href="#" class="deal-fly" data-addr="${esc(d.address || "")}" data-lon="${d.lon}" data-lat="${d.lat}">\u{1F5FA}\uFE0F</a>`,
       ].filter(Boolean).join(" ");
       return `<tr>
         <td>${esc(d.address || "")}</td>
         <td>${esc((d.type || "").toLowerCase())}</td>
-        <td>${esc(d.sale_date || "—")}</td>
-        <td class="num">${d.min_bid ? fmtUSD.format(d.min_bid) : "—"}</td>
-        <td class="num">${d.value ? fmtUSD.format(d.value) : "—"}</td>
-        <td class="num"><strong>${spread !== null && spread > 0 ? fmtUSD.format(spread) : "—"}</strong></td>
+        <td>${esc(d.sale_date || "\u2014")}</td>
+        <td class="num">${d.min_bid ? fmtUSD.format(d.min_bid) : "\u2014"}</td>
+        <td class="num">${d.value ? fmtUSD.format(d.value) : "\u2014"}</td>
+        <td class="num"><strong>${spread !== null && spread > 0 ? fmtUSD.format(spread) : "\u2014"}</strong></td>
         <td>${esc(d.owner || "?")}</td>
         <td class="deal-links">${links}</td>
       </tr>`;
     }).join("");
-    body.innerHTML = `<table class="deal-table">
-      <thead><tr><th>Property</th><th>Type</th><th>Sale date</th><th>Min bid</th>
-      <th>Value</th><th>Spread</th><th>Owner</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+    body.innerHTML = controls + `<table class="deal-table">
+      <thead><tr>
+        <th data-sort="address">Property${arrow("address")}</th>
+        <th data-sort="">Type</th>
+        <th data-sort="sale_date">Sale date${arrow("sale_date")}</th>
+        <th data-sort="min_bid">Min bid${arrow("min_bid")}</th>
+        <th data-sort="value">Value${arrow("value")}</th>
+        <th data-sort="spread">Spread${arrow("spread")}</th>
+        <th data-sort="owner">Owner${arrow("owner")}</th><th></th>
+      </tr></thead><tbody>${tr}</tbody></table>`;
+
+    document.getElementById("dc-county").addEventListener("change", (e) => { dealState.county = e.target.value; renderDeals(); });
+    document.getElementById("dc-type").addEventListener("change", (e) => { dealState.type = e.target.value; renderDeals(); });
+    document.getElementById("dc-spread").addEventListener("change", (e) => {
+      dealState.minSpread = e.target.value === "" ? null : Number(e.target.value); renderDeals();
+    });
+    document.getElementById("dc-owner").addEventListener("change", (e) => { dealState.ownerOnly = e.target.checked; renderDeals(); });
+    body.querySelectorAll("th[data-sort]").forEach((th) => th.addEventListener("click", () => {
+      const col = th.dataset.sort;
+      if (!col) return;
+      if (dealState.sort === col) dealState.dir *= -1;
+      else { dealState.sort = col; dealState.dir = col === "address" || col === "owner" ? 1 : -1; }
+      renderDeals();
+    }));
   }
 
   function dealsCSV() {
@@ -797,7 +928,7 @@
     const cols = ["address", "county", "type", "status", "sale_date", "min_bid",
       "value", "owner", "account", "cause"];
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const csv = [cols.concat("spread").join(",")].concat(dealsCache.map((d) =>
+    const csv = [cols.concat("spread").join(",")].concat(dealRows().map((d) =>
       cols.map((c) => q(d[c])).concat(q(d.min_bid && d.value ? d.value - d.min_bid : "")).join(","))).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -814,10 +945,8 @@
     const el = e.target.closest(".deal-fly");
     if (!el) return;
     e.preventDefault();
-    const d = dealsCache && dealsCache[Number(el.dataset.i)];
-    if (!d) return;
     document.getElementById("dealsheet").classList.add("hidden");
-    map.flyTo({ center: [d.lon, d.lat], zoom: 16 });
+    map.flyTo({ center: [Number(el.dataset.lon), Number(el.dataset.lat)], zoom: 16 });
   });
 
   // ---- Zoom-dependent legends -----------------------------------------

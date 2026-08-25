@@ -363,3 +363,36 @@ html, body {
 .deal-table td.num { text-align: right; white-space: nowrap; }
 .deal-table tr:hover td { background: #fef3c7; }
 .deal-links a { text-decoration: none; margin-right: 4px; }
+
+.deal-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 2px 0 10px;
+  font-size: 12.5px;
+}
+
+.deal-controls select, .deal-controls input[type="number"] {
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 12.5px;
+}
+
+.deal-controls input[type="number"] { width: 100px; }
+.deal-controls label { display: flex; align-items: center; gap: 5px; }
+.deal-count { margin-left: auto; font-weight: 700; color: #7c2d12; }
+.deal-table th { cursor: pointer; user-select: none; }
+
+.paywall {
+  max-width: 430px;
+  margin: 60px auto;
+  text-align: center;
+}
+
+.paywall-icon { font-size: 42px; }
+.paywall h3 { margin: 10px 0 6px; font-size: 20px; }
+.paywall p { color: #374151; font-size: 13.5px; line-height: 1.55; }
+.paywall-btn { font-size: 15px; padding: 10px 22px; margin: 10px 0 4px; }
+.paywall-small { font-size: 11.5px; color: #6b7280; }

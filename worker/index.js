@@ -35,6 +35,12 @@ export default {
     if (url.pathname === "/api/deals") {
       return handleDeals(request, env, ctx, url);
     }
+    if (url.pathname === "/api/checkout") {
+      return handleCheckout(request, env, url);
+    }
+    if (url.pathname === "/api/activate") {
+      return handleActivate(request, env, url);
+    }
     return env.ASSETS.fetch(request);
   },
 };
@@ -128,9 +134,99 @@ async function handleViolations(request, ctx, url) {
   return response;
 }
 
+// ---- DirtFound Pro paywall (Stripe subscription + signed access tokens) ----
+
+const PRICE_ID = "price_1U8Ck38mY0qSfHMDyzoDL02W"; // DirtFound Pro, $29/mo
+const TOKEN_TTL_S = 30 * 24 * 3600; // re-verified against Stripe on expiry
+
+const json = (obj, status = 200) =>
+  withCors(new Response(JSON.stringify(obj), {
+    status, headers: { "Content-Type": "application/json" },
+  }));
+
+async function hmac(env, msg) {
+  const key = await crypto.subtle.importKey("raw",
+    new TextEncoder().encode(env.SIGNING_SECRET),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function makeToken(env, subId) {
+  const payload = `${subId}.${Math.floor(Date.now() / 1000) + TOKEN_TTL_S}`;
+  return `${payload}.${await hmac(env, payload)}`;
+}
+
+// Returns the subscription id if the token is valid and unexpired, else null.
+async function checkToken(env, token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) return null;
+  const [subId, exp, sig] = parts;
+  if (Number(exp) < Date.now() / 1000) return null;
+  return (await hmac(env, `${subId}.${exp}`)) === sig ? subId : null;
+}
+
+async function stripeAPI(env, method, path, form) {
+  const res = await fetch(`https://api.stripe.com/v1${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      ...(form ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
+    },
+    body: form ? new URLSearchParams(form) : undefined,
+  });
+  return { ok: res.ok, data: await res.json() };
+}
+
+async function handleCheckout(request, env, url) {
+  const { ok, data } = await stripeAPI(env, "POST", "/checkout/sessions", {
+    mode: "subscription",
+    "line_items[0][price]": PRICE_ID,
+    "line_items[0][quantity]": "1",
+    success_url: `${url.origin}/?checkout={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${url.origin}/`,
+    allow_promotion_codes: "true",
+  });
+  if (!ok) return json({ error: data.error?.message || "checkout failed" }, 502);
+  return json({ url: data.url });
+}
+
+async function handleActivate(request, env, url) {
+  const sessionId = url.searchParams.get("session_id") || "";
+  // Renewal path: an expired-but-authentic token re-verifies its subscription.
+  const renew = url.searchParams.get("renew") || "";
+  let subId = null;
+  if (sessionId.startsWith("cs_")) {
+    const { ok, data } = await stripeAPI(env, "GET",
+      `/checkout/sessions/${encodeURIComponent(sessionId)}`);
+    if (!ok || data.payment_status !== "paid" || !data.subscription) {
+      return json({ error: "payment not completed" }, 402);
+    }
+    subId = data.subscription;
+  } else if (renew) {
+    const parts = renew.split(".");
+    if (parts.length === 3 && (await hmac(env, `${parts[0]}.${parts[1]}`)) === parts[2]) {
+      subId = parts[0]; // signature valid; expiry ignored — Stripe decides below
+    }
+  }
+  if (!subId) return json({ error: "invalid request" }, 400);
+  const { ok, data } = await stripeAPI(env, "GET",
+    `/subscriptions/${encodeURIComponent(subId)}`);
+  if (!ok || !["active", "trialing", "past_due"].includes(data.status)) {
+    return json({ error: "subscription inactive" }, 402);
+  }
+  return json({ token: await makeToken(env, subId) });
+}
+
 // Deal sheet: every Dallas/Travis tax-foreclosure property joined against the
 // parcel owner database by address, so each row is call-ready. Cached 12h.
+// Requires a DirtFound Pro token (see paywall above).
 async function handleDeals(request, env, ctx, url) {
+  const auth = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!(await checkToken(env, auth))) {
+    return json({ error: "subscription required" }, 402);
+  }
   const cache = caches.default;
   const cacheKey = new Request(url.origin + "/api/deals", { method: "GET" });
   const cached = await cache.match(cacheKey);

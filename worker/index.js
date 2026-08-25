@@ -187,6 +187,8 @@ async function handleCheckout(request, env, url) {
     success_url: `${url.origin}/?checkout={CHECKOUT_SESSION_ID}`,
     cancel_url: `${url.origin}/`,
     allow_promotion_codes: "true",
+    // 100%-off promo codes (e.g. founder code) check out without a card.
+    payment_method_collection: "if_required",
   });
   if (!ok) return json({ error: data.error?.message || "checkout failed" }, 502);
   return json({ url: data.url });
@@ -200,7 +202,8 @@ async function handleActivate(request, env, url) {
   if (sessionId.startsWith("cs_")) {
     const { ok, data } = await stripeAPI(env, "GET",
       `/checkout/sessions/${encodeURIComponent(sessionId)}`);
-    if (!ok || data.payment_status !== "paid" || !data.subscription) {
+    const paid = ["paid", "no_payment_required"].includes(data.payment_status);
+    if (!ok || !paid || !data.subscription) {
       return json({ error: "payment not completed" }, 402);
     }
     subId = data.subscription;

@@ -889,7 +889,8 @@
   async function openDealSheet() {
     const panel = document.getElementById("dealsheet");
     const body = document.getElementById("dealsheet-body");
-    panel.classList.remove("hidden");
+    panel.classList.remove("hidden", "collapsed");
+    document.getElementById("dealsheet-collapse").textContent = "▾";
     if (!dealsCache) {
       body.textContent = "Loading…";
       busy(true);
@@ -1043,10 +1044,23 @@
     URL.revokeObjectURL(a.href);
   }
 
-  document.getElementById("deal-sheet-btn").addEventListener("click", openDealSheet);
+  document.getElementById("deals-toggle").addEventListener("change", (e) => {
+    if (e.target.checked) {
+      openDealSheet();
+    } else {
+      document.getElementById("dealsheet").classList.add("hidden");
+      if (map.getLayer("deals-dots")) map.setLayoutProperty("deals-dots", "visibility", "none");
+    }
+  });
   document.getElementById("dealsheet-close").addEventListener("click", () => {
     document.getElementById("dealsheet").classList.add("hidden");
+    document.getElementById("deals-toggle").checked = false;
     if (map.getLayer("deals-dots")) map.setLayoutProperty("deals-dots", "visibility", "none");
+  });
+  document.getElementById("dealsheet-collapse").addEventListener("click", (e) => {
+    const panel = document.getElementById("dealsheet");
+    const collapsed = panel.classList.toggle("collapsed");
+    e.target.textContent = collapsed ? "▸" : "▾";
   });
   document.getElementById("deals-csv").addEventListener("click", dealsCSV);
 
@@ -1081,7 +1095,8 @@
   async function openDelinquent() {
     const panel = document.getElementById("delinquent-panel");
     const body = document.getElementById("delinquent-body");
-    panel.classList.remove("hidden");
+    panel.classList.remove("hidden", "collapsed");
+    document.getElementById("delinquent-collapse").textContent = "▾";
     if (!delinquentCache) {
       body.textContent = "Loading…";
       busy(true);
@@ -1180,9 +1195,21 @@
     URL.revokeObjectURL(a.href);
   }
 
-  document.getElementById("delinquent-btn").addEventListener("click", openDelinquent);
+  document.getElementById("delinquent-toggle").addEventListener("change", (e) => {
+    if (e.target.checked) {
+      openDelinquent();
+    } else {
+      document.getElementById("delinquent-panel").classList.add("hidden");
+    }
+  });
   document.getElementById("delinquent-close").addEventListener("click", () => {
     document.getElementById("delinquent-panel").classList.add("hidden");
+    document.getElementById("delinquent-toggle").checked = false;
+  });
+  document.getElementById("delinquent-collapse").addEventListener("click", (e) => {
+    const panel = document.getElementById("delinquent-panel");
+    const collapsed = panel.classList.toggle("collapsed");
+    e.target.textContent = collapsed ? "▸" : "▾";
   });
   document.getElementById("delinquent-csv").addEventListener("click", delinquentCSV);
   document.addEventListener("click", (e) => {

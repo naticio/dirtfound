@@ -306,6 +306,14 @@ html, body {
 
 .dealsheet.hidden { display: none; }
 
+.dealsheet.collapsed {
+  bottom: auto;
+}
+.dealsheet.collapsed .dealsheet-note,
+.dealsheet.collapsed .dealsheet-body {
+  display: none;
+}
+
 .dealsheet-head {
   display: flex;
   align-items: center;
@@ -318,7 +326,8 @@ html, body {
   flex: 1;
 }
 
-.dealsheet-close {
+.dealsheet-close,
+.dealsheet-collapse {
   background: none;
   border: none;
   font-size: 26px;
@@ -326,6 +335,7 @@ html, body {
   cursor: pointer;
   color: #4b5563;
 }
+.dealsheet-collapse { font-size: 20px; }
 
 .dealsheet-note {
   margin: 6px 0 10px;

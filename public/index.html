@@ -15,43 +15,34 @@
   <header class="panel filterbar">
     <span class="brand">DirtFound</span>
 
-    <div class="fgroup">
-      <button class="fbtn" id="btn-status" type="button">Owner type ▾</button>
-      <div class="dropdown hidden" id="dd-status">
-        <label><input type="checkbox" data-status="Out-of-state" checked /> Absentee — out-of-state</label>
-        <label><input type="checkbox" data-status="Absentee (TX)" checked /> Absentee — in-state</label>
-        <label><input type="checkbox" data-status="Local" checked /> Local owner</label>
-        <label><input type="checkbox" data-status="Unknown" checked /> Unknown</label>
-      </div>
-    </div>
+    <input class="fsearch" id="owner-search" type="search" placeholder="Search owner or address" />
 
     <div class="fgroup">
-      <button class="fbtn" id="btn-value" type="button">Value ▾</button>
-      <div class="dropdown hidden" id="dd-value">
-        <label>Min $ <input type="number" id="val-min" placeholder="0" min="0" step="10000" /></label>
-        <label>Max $ <input type="number" id="val-max" placeholder="no limit" min="0" step="10000" /></label>
+      <button class="fbtn" id="btn-filters" type="button">Filters <span id="filters-badge"></span> ▾</button>
+      <div class="dropdown hidden" id="dd-filters">
+        <div class="dd-section">
+          <h3>Owner type</h3>
+          <label><input type="checkbox" data-status="Out-of-state" checked /> Absentee — out-of-state</label>
+          <label><input type="checkbox" data-status="Absentee (TX)" checked /> Absentee — in-state</label>
+          <label><input type="checkbox" data-status="Local" checked /> Local owner</label>
+          <label><input type="checkbox" data-status="Unknown" checked /> Unknown</label>
+        </div>
+        <div class="dd-section">
+          <h3>Value</h3>
+          <label>Min $ <input type="number" id="val-min" placeholder="0" min="0" step="10000" /></label>
+          <label>Max $ <input type="number" id="val-max" placeholder="no limit" min="0" step="10000" /></label>
+        </div>
+        <div class="dd-section">
+          <h3>Signals — likely to sell</h3>
+          <label><input type="checkbox" id="violations-toggle" /> Open code violation</label>
+          <label><input type="checkbox" id="taxsales-toggle" /> Upcoming tax foreclosure sale</label>
+          <label><input type="checkbox" id="deals-toggle" /> 💰 Deal Sheet (Pro)</label>
+          <label><input type="checkbox" id="delinquent-toggle" /> 🧾 Delinquent on property tax (Pro)</label>
+        </div>
       </div>
     </div>
-
-    <input class="fsearch" id="owner-search" type="search" placeholder="Owner or address — Enter searches all" />
-
-    <label class="fbtn ftoggle" for="violations-toggle">
-      <input type="checkbox" id="violations-toggle" /> Violations
-    </label>
-
-    <label class="fbtn ftoggle" for="taxsales-toggle">
-      <input type="checkbox" id="taxsales-toggle" /> Tax sales
-    </label>
 
     <button class="fbtn primary" id="export-csv" type="button">Export CSV</button>
-
-    <label class="fbtn ftoggle" for="deals-toggle">
-      <input type="checkbox" id="deals-toggle" /> 💰 Deals
-    </label>
-
-    <label class="fbtn ftoggle" for="delinquent-toggle">
-      <input type="checkbox" id="delinquent-toggle" /> 🧾 Delinquent Tax
-    </label>
 
     <button class="fbtn" id="restore-access-btn" type="button">🔑 Restore Access</button>
 

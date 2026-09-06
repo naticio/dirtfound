@@ -436,7 +436,7 @@
     filterState.min = null;
     filterState.max = null;
     filterState.query = "";
-    document.querySelectorAll("#dd-status input[data-status]").forEach((cb) => (cb.checked = true));
+    document.querySelectorAll("#dd-filters input[data-status]").forEach((cb) => (cb.checked = true));
     document.getElementById("val-min").value = "";
     document.getElementById("val-max").value = "";
     document.getElementById("owner-search").value = "";
@@ -463,11 +463,16 @@
     URL.revokeObjectURL(a.href);
   }
 
+  function updateFiltersBadge() {
+    const n = ["violations-toggle", "taxsales-toggle", "deals-toggle", "delinquent-toggle"]
+      .filter((id) => document.getElementById(id).checked).length;
+    document.getElementById("filters-badge").textContent = n ? String(n) : "";
+  }
+
   function wireFilterBar() {
     // Dropdown open/close
     const pairs = [
-      ["btn-status", "dd-status"],
-      ["btn-value", "dd-value"],
+      ["btn-filters", "dd-filters"],
     ];
     for (const [btnId, ddId] of pairs) {
       const btn = document.getElementById(btnId);
@@ -486,13 +491,21 @@
     });
 
     // Owner type checkboxes
-    document.querySelectorAll("#dd-status input[data-status]").forEach((cb) => {
+    document.querySelectorAll("#dd-filters input[data-status]").forEach((cb) => {
       cb.addEventListener("change", () => {
         cb.checked ? filterState.statuses.add(cb.dataset.status)
                    : filterState.statuses.delete(cb.dataset.status);
         applyFilters();
       });
     });
+
+    // Signal toggles live inside the same Filters panel now — keep the
+    // button's badge count in sync regardless of which feature wires the
+    // actual behavior (violations/tax sales/deals/delinquent).
+    ["violations-toggle", "taxsales-toggle", "deals-toggle", "delinquent-toggle"].forEach((id) => {
+      document.getElementById(id).addEventListener("change", updateFiltersBadge);
+    });
+    updateFiltersBadge();
 
     // Value range
     const parseVal = (el) => {
@@ -988,32 +1001,38 @@
       <label><input type="checkbox" id="dc-owner"${dealState.ownerOnly ? " checked" : ""}> owner matched</label>
       <span class="deal-count">${fmtInt.format(rows.length)} deals</span>
     </div>`;
-    const tr = rows.map((d) => {
+    const cards = rows.map((d) => {
       const spread = (d.min_bid && d.value) ? d.value - d.min_bid : null;
       const tps = tpsLink(d.owner);
       const links = [
-        tps ? `<a href="${tps}" target="_blank" rel="noopener">\u{1F4DE}</a>` : "",
+        tps ? `<a href="${tps}" target="_blank" rel="noopener" title="Phone lookup">\u{1F4DE}</a>` : "",
         d.county === "DALLAS COUNTY" && d.account
-          ? `<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(d.account)}" target="_blank" rel="noopener">\u{1F4DC}</a>` : "",
-        `<a href="#" class="deal-fly" data-addr="${esc(d.address || "")}" data-lon="${d.lon}" data-lat="${d.lat}">\u{1F5FA}\uFE0F</a>`,
-      ].filter(Boolean).join(" ");
-      const sub = [(d.type || "").toLowerCase(), d.sale_date || null]
-        .filter(Boolean).join(" \u00b7 ");
-      return `<tr>
-        <td>${esc(d.address || "")}<div class="deal-sub">${esc(sub)} \u00b7 ${esc(d.owner || "?")}</div></td>
-        <td class="num">${d.min_bid ? fmtUSD.format(d.min_bid) : "\u2014"}</td>
-        <td class="num">${d.value ? fmtUSD.format(d.value) : "\u2014"}</td>
-        <td class="num"><strong>${spread !== null && spread > 0 ? fmtUSD.format(spread) : "\u2014"}</strong></td>
-        <td class="deal-links">${links}</td>
-      </tr>`;
+          ? `<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(d.account)}" target="_blank" rel="noopener" title="DCAD record">\u{1F4DC}</a>` : "",
+        `<a href="#" class="deal-fly" data-addr="${esc(d.address || "")}" data-lon="${d.lon}" data-lat="${d.lat}" title="Fly to on map">\u{1F5FA}\uFE0F</a>`,
+      ].filter(Boolean).join("");
+      const tags = [(d.type || "").toLowerCase(), d.sale_date || null]
+        .filter(Boolean).map((t) => `<span class="dc-tag">${esc(t)}</span>`).join("");
+      return `<div class="dc-card">
+        <div class="dc-card-main">
+          <div class="dc-card-address">${esc(d.address || "")}</div>
+          <div class="dc-card-sub">${tags}<span>${esc(d.owner || "?")}</span></div>
+        </div>
+        <div class="dc-card-stats">
+          <div class="dc-stat"><span class="dc-stat-label">Min bid</span><span class="dc-stat-val">${d.min_bid ? fmtUSD.format(d.min_bid) : "\u2014"}</span></div>
+          <div class="dc-stat"><span class="dc-stat-label">Value</span><span class="dc-stat-val">${d.value ? fmtUSD.format(d.value) : "\u2014"}</span></div>
+          <div class="dc-stat dc-stat-highlight"><span class="dc-stat-label">Spread</span><span class="dc-stat-val">${spread !== null && spread > 0 ? fmtUSD.format(spread) : "\u2014"}</span></div>
+        </div>
+        <div class="dc-card-actions">${links}</div>
+      </div>`;
     }).join("");
-    body.innerHTML = controls + `<table class="deal-table">
-      <thead><tr>
-        <th data-sort="address">Property${arrow("address")}</th>
-        <th data-sort="min_bid">Min bid${arrow("min_bid")}</th>
-        <th data-sort="value">Value${arrow("value")}</th>
-        <th data-sort="spread">Spread${arrow("spread")}</th><th></th>
-      </tr></thead><tbody>${tr}</tbody></table>`;
+    body.innerHTML = controls + `<div class="dc-sortbar">
+      <span class="dc-sortlabel">Sort:</span>
+      <button class="dc-sort-btn${dealState.sort === "address" ? " active" : ""}" data-sort="address">Property${arrow("address")}</button>
+      <button class="dc-sort-btn${dealState.sort === "min_bid" ? " active" : ""}" data-sort="min_bid">Min bid${arrow("min_bid")}</button>
+      <button class="dc-sort-btn${dealState.sort === "value" ? " active" : ""}" data-sort="value">Value${arrow("value")}</button>
+      <button class="dc-sort-btn${dealState.sort === "spread" ? " active" : ""}" data-sort="spread">Spread${arrow("spread")}</button>
+    </div>
+    <div class="dc-list">${cards}</div>`;
 
     document.getElementById("dc-county").addEventListener("change", (e) => { dealState.county = e.target.value; renderDeals(); });
     document.getElementById("dc-type").addEventListener("change", (e) => { dealState.type = e.target.value; renderDeals(); });
@@ -1021,8 +1040,8 @@
       dealState.minSpread = e.target.value === "" ? null : Number(e.target.value); renderDeals();
     });
     document.getElementById("dc-owner").addEventListener("change", (e) => { dealState.ownerOnly = e.target.checked; renderDeals(); });
-    body.querySelectorAll("th[data-sort]").forEach((th) => th.addEventListener("click", () => {
-      const col = th.dataset.sort;
+    body.querySelectorAll(".dc-sort-btn").forEach((btn) => btn.addEventListener("click", () => {
+      const col = btn.dataset.sort;
       if (!col) return;
       if (dealState.sort === col) dealState.dir *= -1;
       else { dealState.sort = col; dealState.dir = col === "address" || col === "owner" ? 1 : -1; }
@@ -1140,28 +1159,34 @@
       <input type="search" id="dq-search" placeholder="Search owner or address…" value="${esc(delinquentState.q)}" style="flex:1;min-width:160px">
       <span class="deal-count">${shownNote}</span>
     </div>`;
-    const tr = rows.map((d) => {
+    const cards = rows.map((d) => {
       const tps = tpsLink(d.owner);
       const links = [
-        tps ? `<a href="${tps}" target="_blank" rel="noopener">\u{1F4DE}</a>` : "",
-        d.account ? `<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(d.account)}" target="_blank" rel="noopener">\u{1F4DC}</a>` : "",
-      ].filter(Boolean).join(" ");
-      const sub = [
+        tps ? `<a href="${tps}" target="_blank" rel="noopener" title="Phone lookup">\u{1F4DE}</a>` : "",
+        d.account ? `<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(d.account)}" target="_blank" rel="noopener" title="DCAD record">\u{1F4DC}</a>` : "",
+      ].filter(Boolean).join("");
+      const tags = [
         d.city ? esc(d.city) : "",
         d.years_delinquent ? `${d.years_delinquent} yr${d.years_delinquent === 1 ? "" : "s"} behind` : "",
-        d.suit ? `\u{2696}️ suit ${esc(d.causeno || "pending")}` : "",
-      ].filter(Boolean).join(" · ");
-      return `<tr>
-        <td>${esc(d.owner || "?")}<div class="deal-sub">${esc(d.address || "")}${sub ? " · " + sub : ""}</div></td>
-        <td class="num"><strong>${fmtUSD.format(d.amount_due || 0)}</strong></td>
-        <td class="deal-links">${links}</td>
-      </tr>`;
+      ].filter(Boolean).map((t) => `<span class="dc-tag">${t}</span>`).join("")
+        + (d.suit ? `<span class="dc-tag suit">\u{2696}️ suit ${esc(d.causeno || "pending")}</span>` : "");
+      return `<div class="dc-card">
+        <div class="dc-card-main">
+          <div class="dc-card-address">${esc(d.owner || "?")}</div>
+          <div class="dc-card-sub"><span>${esc(d.address || "")}</span>${tags}</div>
+        </div>
+        <div class="dc-card-stats">
+          <div class="dc-stat dc-stat-highlight"><span class="dc-stat-label">Amount due</span><span class="dc-stat-val">${fmtUSD.format(d.amount_due || 0)}</span></div>
+        </div>
+        <div class="dc-card-actions">${links}</div>
+      </div>`;
     }).join("");
-    body.innerHTML = controls + `<table class="deal-table">
-      <thead><tr>
-        <th data-sort="owner">Owner${arrow("owner")}</th>
-        <th data-sort="amount_due">Amount due${arrow("amount_due")}</th><th></th>
-      </tr></thead><tbody>${tr}</tbody></table>`;
+    body.innerHTML = controls + `<div class="dc-sortbar">
+      <span class="dc-sortlabel">Sort:</span>
+      <button class="dc-sort-btn${delinquentState.sort === "owner" ? " active" : ""}" data-sort="owner">Owner${arrow("owner")}</button>
+      <button class="dc-sort-btn${delinquentState.sort === "amount_due" ? " active" : ""}" data-sort="amount_due">Amount due${arrow("amount_due")}</button>
+    </div>
+    <div class="dc-list">${cards}</div>`;
 
     document.getElementById("dq-search").addEventListener("keydown", async (e) => {
       if (e.key !== "Enter") return;
@@ -1174,8 +1199,8 @@
         renderDelinquent();
       } finally { busy(false); }
     });
-    body.querySelectorAll("th[data-sort]").forEach((th) => th.addEventListener("click", () => {
-      const col = th.dataset.sort;
+    body.querySelectorAll(".dc-sort-btn").forEach((btn) => btn.addEventListener("click", () => {
+      const col = btn.dataset.sort;
       if (!col) return;
       if (delinquentState.sort === col) delinquentState.dir *= -1;
       else { delinquentState.sort = col; delinquentState.dir = col === "owner" ? 1 : -1; }

@@ -41,6 +41,14 @@
           <label><input type="checkbox" id="delinquent-toggle" /> 🧾 Delinquent on property tax (Pro)</label>
           <div class="signal-lock hidden" id="delinquent-lock">🔒 Pro feature — <a href="#" id="delinquent-unlock">unlock, $100/mo</a></div>
         </div>
+        <div class="dd-section">
+          <h3>Public-record signals (free, DCAD)</h3>
+          <label><input type="checkbox" id="teardown-toggle" /> 🏚️ Teardown candidate — old, small, long-owned</label>
+          <label><input type="checkbox" id="over65-toggle" /> 👴 Over-65 / disabled owner exemption</label>
+          <label><input type="checkbox" id="absentee-dcad-toggle" /> 📫 Absentee owner (mailing ≠ property)</label>
+          <label><input type="checkbox" id="deferred-toggle" /> ⏳ Tax deferred</label>
+          <p class="dd-hint">Zoom in on an area to load pins — these signals cover Dallas County only, some are too large to show statewide at once.</p>
+        </div>
       </div>
     </div>
 
@@ -71,6 +79,9 @@
     </div>
     <div class="legend-violations hidden" id="legend-taxsales">
       <span class="vdot tdot"></span>Tax foreclosure sale
+    </div>
+    <div class="legend-violations hidden" id="legend-dcad-signals">
+      <span class="vdot sdot"></span><span id="legend-dcad-label">DCAD signal</span>
     </div>
   </div>
 

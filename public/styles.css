@@ -300,6 +300,18 @@ html, body {
   box-shadow: 0 0 0 1px #78350f;
 }
 
+.sdot {
+  background: #059669;
+  box-shadow: 0 0 0 1px #064e3b;
+}
+
+.dd-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+
 .fsearch.active {
   border-color: var(--primary);
   background-color: #fff;

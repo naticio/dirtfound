@@ -79,6 +79,7 @@
     wireFilterBar();
     wireViolations();
     wireTaxSales();
+    wireDcadSignals();
 
     map.addLayer({
       id: "counties-fill",
@@ -293,6 +294,13 @@
         const v = map.queryRenderedFeatures(e.point, { layers: ["violations"] });
         if (v.length) html = violationPopupHTML(v[0].properties);
       }
+      if (!html) {
+        const dcadLayers = DCAD_SIGNAL_IDS.map((id) => `dcad-${id}`).filter((id) => map.getLayer(id));
+        if (dcadLayers.length) {
+          const d = map.queryRenderedFeatures(e.point, { layers: dcadLayers });
+          if (d.length) html = dcadSignalPopupHTML(d[0].properties);
+        }
+      }
       const parcels = html ? [] : map.queryRenderedFeatures(e.point, { layers: ["parcels"] });
       if (parcels.length) {
         html = parcelPopupHTML(parcels[0].properties);
@@ -464,7 +472,7 @@
   }
 
   function updateFiltersBadge() {
-    const n = ["violations-toggle", "taxsales-toggle", "deals-toggle", "delinquent-toggle"]
+    const n = ["violations-toggle", "taxsales-toggle", "deals-toggle", "delinquent-toggle", "teardown-toggle", "over65-toggle", "absentee-dcad-toggle", "deferred-toggle"]
       .filter((id) => document.getElementById(id).checked).length;
     document.getElementById("filters-badge").textContent = n ? String(n) : "";
   }
@@ -510,7 +518,7 @@
     // Signal toggles live inside the same Filters panel now — keep the
     // button's badge count in sync regardless of which feature wires the
     // actual behavior (violations/tax sales/deals/delinquent).
-    ["violations-toggle", "taxsales-toggle", "deals-toggle", "delinquent-toggle"].forEach((id) => {
+    ["violations-toggle", "taxsales-toggle", "deals-toggle", "delinquent-toggle", "teardown-toggle", "over65-toggle", "absentee-dcad-toggle", "deferred-toggle"].forEach((id) => {
       document.getElementById(id).addEventListener("change", updateFiltersBadge);
     });
     updateFiltersBadge();
@@ -740,6 +748,103 @@
     if (toggle.checked) sync();
   }
 
+  // ---- DCAD public-record signals (free, Dallas County only) -----------
+  // Some of these cover 100k+ parcels, too many to ship as one blob, so
+  // each is fetched scoped to the current map viewport and refetched on
+  // pan/zoom while its toggle is checked.
+
+  const DCAD_SIGNAL_IDS = ["teardown", "over65", "absentee-dcad", "deferred"];
+  const DCAD_SIGNAL_PARAM = { teardown: "teardown", over65: "over65", "absentee-dcad": "absentee", deferred: "deferred" };
+  const DCAD_SIGNAL_LABEL = {
+    teardown: "Teardown candidate",
+    over65: "Over-65 / disabled owner",
+    "absentee-dcad": "Absentee owner",
+    deferred: "Tax deferred",
+  };
+
+  function wireDcadSignals() {
+    const legendRow = document.getElementById("legend-dcad-signals");
+    const legendLabel = document.getElementById("legend-dcad-label");
+    let moveTimer = null;
+
+    const activeIds = () => DCAD_SIGNAL_IDS.filter((id) => document.getElementById(`${id}-toggle`).checked);
+
+    const updateLegend = () => {
+      const active = activeIds();
+      legendRow.classList.toggle("hidden", !active.length);
+      if (active.length) legendLabel.textContent = active.map((id) => DCAD_SIGNAL_LABEL[id]).join(" · ");
+    };
+
+    const loadSignal = async (id) => {
+      const b = map.getBounds();
+      const params = new URLSearchParams({
+        signal: DCAD_SIGNAL_PARAM[id],
+        minLon: b.getWest(), minLat: b.getSouth(), maxLon: b.getEast(), maxLat: b.getNorth(),
+      });
+      const res = await fetch(`/api/dcad-signals?${params}`);
+      if (!res.ok) throw new Error(`dcad-signals ${id} failed`);
+      const geojson = await res.json();
+      const layerId = `dcad-${id}`;
+      const source = map.getSource(layerId);
+      if (source) {
+        source.setData(geojson);
+      } else {
+        map.addSource(layerId, { type: "geojson", data: geojson });
+        map.addLayer({
+          id: layerId,
+          type: "circle",
+          source: layerId,
+          minzoom: 10,
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3, 14, 7],
+            "circle-color": "#059669",
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-width": 1.25,
+            "circle-opacity": 0.9,
+          },
+        });
+      }
+      map.setLayoutProperty(layerId, "visibility", "visible");
+    };
+
+    const refreshActive = async () => {
+      const active = activeIds();
+      if (!active.length) return;
+      busy(true);
+      try {
+        await Promise.all(active.map((id) => loadSignal(id).catch((err) => console.error(err))));
+      } finally {
+        busy(false);
+      }
+    };
+
+    DCAD_SIGNAL_IDS.forEach((id) => {
+      document.getElementById(`${id}-toggle`).addEventListener("change", async (e) => {
+        const layerId = `dcad-${id}`;
+        if (e.target.checked) {
+          busy(true);
+          try {
+            await loadSignal(id);
+          } catch (err) {
+            console.error(err);
+            e.target.checked = false;
+          } finally {
+            busy(false);
+          }
+        } else if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, "visibility", "none");
+        }
+        updateLegend();
+      });
+    });
+
+    map.on("moveend", () => {
+      if (!activeIds().length) return;
+      clearTimeout(moveTimer);
+      moveTimer = setTimeout(refreshActive, 400);
+    });
+  }
+
   function taxSalePopupHTML(p) {
     const lines = [
       `<strong>💰 ${esc(p.type || "Tax sale")}</strong> — ${esc(p.status)}`,
@@ -764,6 +869,22 @@
       blank(p.address) ? null : esc(p.address + (p.zip ? " " + p.zip : "")),
       `Opened ${esc(p.opened)}`,
     ].filter(Boolean).join("<br>");
+  }
+
+  function dcadSignalPopupHTML(p) {
+    const tags = [];
+    if (p.teardown_candidate) tags.push("🏚️ Teardown candidate");
+    if (p.over65) tags.push("👴 Over-65 exemption");
+    if (p.disabled) tags.push("♿ Disabled exemption");
+    if (p.absentee) tags.push("📫 Absentee owner");
+    if (p.deferred) tags.push("⏳ Tax deferred");
+    return [
+      `<strong>${esc(p.address || "")}</strong>`,
+      tags.join(" · "),
+      p.owner ? `Owner: ${esc(p.owner)}` : null,
+      p.yr_built ? `Built ${esc(p.yr_built)}${p.living_sf ? `, ${fmtInt.format(p.living_sf)} sqft` : ""}` : null,
+      p.years_owned ? `Owned ${esc(p.years_owned)} years` : null,
+    ].filter(Boolean).join("<br>") + contactLinksHTML({ name: p.owner, addr: p.address });
   }
 
   // ---- Deal Sheet (the whole tax-sale call list, joined to owners) ------

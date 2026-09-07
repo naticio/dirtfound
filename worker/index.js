@@ -38,6 +38,9 @@ export default {
     if (url.pathname === "/api/delinquent") {
       return handleDelinquent(request, env, url);
     }
+    if (url.pathname === "/api/dcad-signals") {
+      return handleDcadSignals(request, env, url);
+    }
     if (url.pathname === "/api/checkout") {
       return handleCheckout(request, env, url);
     }
@@ -457,6 +460,81 @@ async function handleDelinquent(request, env, url) {
     total: totals?.n || 0,
     total_owed: totals?.total_owed || 0,
   });
+}
+
+// Public-record "likely to sell" signals derived from the DCAD certified
+// appraisal roll (free — no subscription check). Each `signal` value maps to
+// a precomputed boolean column on dcad_signals. Bounded by an optional
+// viewport bbox since some signals (over65: 136k rows, absentee: 104k) are
+// too large to ship as one GeoJSON blob.
+const DCAD_SIGNALS = {
+  teardown: { col: "teardown_candidate", label: "Teardown candidate" },
+  over65: { col: "over65", label: "Over-65 / disabled exemption" },
+  absentee: { col: "absentee", label: "Absentee owner" },
+  deferred: { col: "deferred", label: "Tax deferred" },
+};
+
+async function handleDcadSignals(request, env, url) {
+  const signal = url.searchParams.get("signal") || "";
+  const def = DCAD_SIGNALS[signal];
+  if (!def) {
+    return json({ error: `signal must be one of: ${Object.keys(DCAD_SIGNALS).join(", ")}` }, 400);
+  }
+
+  const num = (name) => {
+    const v = url.searchParams.get(name);
+    if (v === null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const minLon = num("minLon"), minLat = num("minLat"), maxLon = num("maxLon"), maxLat = num("maxLat");
+  const hasBbox = [minLon, minLat, maxLon, maxLat].every((v) => v !== null);
+  const limit = Math.min(Number(url.searchParams.get("limit")) || 2000, 3000);
+
+  let stmt;
+  if (hasBbox) {
+    stmt = env.OWNERS.prepare(
+      `SELECT account, owner_name, situs_addr, situs_city, yr_built, living_sf,
+              years_owned, over65, disabled, absentee, deferred, teardown_candidate, lon, lat
+       FROM dcad_signals
+       WHERE ${def.col} = 1 AND lon BETWEEN ? AND ? AND lat BETWEEN ? AND ?
+       LIMIT ?`
+    ).bind(minLon, maxLon, minLat, maxLat, limit);
+  } else {
+    stmt = env.OWNERS.prepare(
+      `SELECT account, owner_name, situs_addr, situs_city, yr_built, living_sf,
+              years_owned, over65, disabled, absentee, deferred, teardown_candidate, lon, lat
+       FROM dcad_signals
+       WHERE ${def.col} = 1
+       LIMIT ?`
+    ).bind(limit);
+  }
+  const { results } = await stmt.all();
+
+  const geojson = {
+    type: "FeatureCollection",
+    features: results.map((r) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [r.lon, r.lat] },
+      properties: {
+        account: r.account,
+        owner: r.owner_name,
+        address: r.situs_addr,
+        city: r.situs_city,
+        yr_built: r.yr_built,
+        living_sf: r.living_sf,
+        years_owned: r.years_owned,
+        over65: !!r.over65,
+        disabled: !!r.disabled,
+        absentee: !!r.absentee,
+        deferred: !!r.deferred,
+        teardown_candidate: !!r.teardown_candidate,
+      },
+    })),
+    truncated: results.length >= limit,
+  };
+
+  return json(geojson);
 }
 
 // Owner-name search over all parcels (D1 + FTS5). Word-prefix matching:

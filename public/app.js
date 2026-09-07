@@ -469,6 +469,14 @@
     document.getElementById("filters-badge").textContent = n ? String(n) : "";
   }
 
+  // Programmatically unchecking a toggle doesn't fire "change", so the
+  // Filters badge count would go stale — route every such uncheck through
+  // here instead of setting .checked directly.
+  function uncheckToggle(id) {
+    document.getElementById(id).checked = false;
+    updateFiltersBadge();
+  }
+
   function wireFilterBar() {
     // Dropdown open/close
     const pairs = [
@@ -793,19 +801,6 @@
     } catch { return false; }
   }
 
-  function paywallHTML() {
-    return `<div class="paywall">
-      <div class="paywall-icon">💰🔒</div>
-      <h3>DirtFound Pro</h3>
-      <p>The Deal Sheet joins every Dallas &amp; Travis tax-foreclosure listing to its
-      owner on the tax roll — sorted by spread, phone-lookup ready, refreshed every
-      12 hours, with CSV export.</p>
-      <button class="fbtn primary paywall-btn" id="paywall-buy">Unlock — $100/month</button>
-      <p class="paywall-small">Stripe checkout · cancel anytime · already subscribed on
-      this browser? Access restores automatically after checkout.</p>
-    </div>`;
-  }
-
   async function startCheckout(bodyEl) {
     busy(true);
     try {
@@ -819,8 +814,11 @@
   }
 
   document.addEventListener("click", (e) => {
-    const btn = e.target.closest("#paywall-buy");
-    if (btn) startCheckout(btn.closest(".dealsheet-body") || document.getElementById("dealsheet-body"));
+    const btn = e.target.closest(".paywall-buy");
+    if (btn) {
+      e.preventDefault();
+      startCheckout(btn.closest(".dealsheet-body") || btn.closest(".signal-lock") || document.getElementById("dealsheet-body"));
+    }
   });
 
   // Returning from Stripe: ?checkout=cs_... → exchange for an access token.
@@ -901,22 +899,26 @@
 
   async function openDealSheet() {
     const panel = document.getElementById("dealsheet");
-    const body = document.getElementById("dealsheet-body");
-    panel.classList.remove("hidden", "collapsed");
-    document.getElementById("dealsheet-collapse").textContent = "▾";
+    const lock = document.getElementById("deals-lock");
+    lock.classList.add("hidden");
     if (!dealsCache) {
-      body.textContent = "Loading…";
       busy(true);
       try {
         let r = await fetchDeals();
         if (r.paywall && (await tryRenew())) r = await fetchDeals();
-        if (r.paywall) { body.innerHTML = paywallHTML(); return; }
+        if (r.paywall) {
+          uncheckToggle("deals-toggle");
+          lock.classList.remove("hidden");
+          return;
+        }
         dealsCache = r.deals;
       } catch {
-        body.textContent = "Failed to load — try again.";
+        uncheckToggle("deals-toggle");
         return;
       } finally { busy(false); }
     }
+    panel.classList.remove("hidden", "collapsed");
+    document.getElementById("dealsheet-collapse").textContent = "▾";
     renderDeals();
   }
 
@@ -1073,7 +1075,7 @@
   });
   document.getElementById("dealsheet-close").addEventListener("click", () => {
     document.getElementById("dealsheet").classList.add("hidden");
-    document.getElementById("deals-toggle").checked = false;
+    uncheckToggle("deals-toggle");
     if (map.getLayer("deals-dots")) map.setLayoutProperty("deals-dots", "visibility", "none");
   });
   document.getElementById("dealsheet-collapse").addEventListener("click", (e) => {
@@ -1098,38 +1100,29 @@
     return await res.json();
   }
 
-  function delinquentPaywallHTML() {
-    return `<div class="paywall">
-      <div class="paywall-icon">🧾🔒</div>
-      <h3>DirtFound Pro</h3>
-      <p>95,000+ Dallas County accounts currently behind on property taxes, straight
-      from the county's own tax roll — the earliest, least-competed-for distress
-      signal there is. Included with the same Pro subscription as the Deal Sheet.</p>
-      <button class="fbtn primary paywall-btn" id="paywall-buy">Unlock — $100/month</button>
-      <p class="paywall-small">Stripe checkout · cancel anytime · already subscribed on
-      this browser? Access restores automatically after checkout.</p>
-    </div>`;
-  }
-
   async function openDelinquent() {
     const panel = document.getElementById("delinquent-panel");
-    const body = document.getElementById("delinquent-body");
-    panel.classList.remove("hidden", "collapsed");
-    document.getElementById("delinquent-collapse").textContent = "▾";
+    const lock = document.getElementById("delinquent-lock");
+    lock.classList.add("hidden");
     if (!delinquentCache) {
-      body.textContent = "Loading…";
       busy(true);
       try {
         let r = await fetchDelinquent("");
         if (r.paywall && (await tryRenew())) r = await fetchDelinquent("");
-        if (r.paywall) { body.innerHTML = delinquentPaywallHTML(); return; }
+        if (r.paywall) {
+          uncheckToggle("delinquent-toggle");
+          lock.classList.remove("hidden");
+          return;
+        }
         delinquentCache = r.delinquent;
         delinquentMeta = { total: r.total, total_owed: r.total_owed };
       } catch {
-        body.textContent = "Failed to load — try again.";
+        uncheckToggle("delinquent-toggle");
         return;
       } finally { busy(false); }
     }
+    panel.classList.remove("hidden", "collapsed");
+    document.getElementById("delinquent-collapse").textContent = "▾";
     renderDelinquent();
   }
 
@@ -1229,7 +1222,7 @@
   });
   document.getElementById("delinquent-close").addEventListener("click", () => {
     document.getElementById("delinquent-panel").classList.add("hidden");
-    document.getElementById("delinquent-toggle").checked = false;
+    uncheckToggle("delinquent-toggle");
   });
   document.getElementById("delinquent-collapse").addEventListener("click", (e) => {
     const panel = document.getElementById("delinquent-panel");

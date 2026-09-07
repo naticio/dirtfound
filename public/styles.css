@@ -182,6 +182,15 @@ html, body {
 }
 #filters-badge:empty { display: none; }
 
+.signal-lock {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin: -3px 0 2px 21px;
+}
+.signal-lock.hidden { display: none; }
+.signal-lock a { color: var(--primary); text-decoration: none; font-weight: 600; }
+.signal-lock a:hover { text-decoration: underline; }
+
 .legend-violations {
   display: flex;
   align-items: center;

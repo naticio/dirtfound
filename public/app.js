@@ -282,6 +282,11 @@
           html = taxSalePopupHTML(p) + (p.owner ? `<br>Owner: ${esc(p.owner)}` : "");
         }
       }
+      if (!html && map.getLayer("delinquent-dots") &&
+          map.getLayoutProperty("delinquent-dots", "visibility") !== "none") {
+        const dq = map.queryRenderedFeatures(e.point, { layers: ["delinquent-dots"] });
+        if (dq.length) html = delinquentPopupHTML(dq[0].properties);
+      }
       if (!html && map.getLayer("search-results")) {
         const s = map.queryRenderedFeatures(e.point, { layers: ["search-results"] });
         if (s.length) { html = searchResultPopupHTML(s[0].properties); annotateWith = s[0].properties.addr; }
@@ -887,6 +892,17 @@
     ].filter(Boolean).join("<br>") + contactLinksHTML({ name: p.owner, addr: p.address });
   }
 
+  function delinquentPopupHTML(p) {
+    return [
+      `<strong>${esc(p.situs_addr || p.address || "")}</strong>`,
+      p.situs_city ? `${esc(p.situs_city)}, TX ${esc(p.situs_zip || "")}` : null,
+      `🧾 Delinquent: ${fmtUSD.format(p.amount_due || 0)}`,
+      p.years_delinquent ? `${esc(p.years_delinquent)} year${p.years_delinquent === 1 ? "" : "s"} behind` : null,
+      p.owner ? `Owner: ${esc(p.owner)}` : null,
+      p.suit ? `⚖️ Suit filed ${esc(p.causeno || "")}` : null,
+    ].filter(Boolean).join("<br>") + contactLinksHTML({ name: p.owner, addr: p.situs_addr || p.address });
+  }
+
   // ---- Deal Sheet (the whole tax-sale call list, joined to owners) ------
 
   let dealsCache = null;
@@ -1210,15 +1226,49 @@
 
   let delinquentCache = null;
   let delinquentMeta = null;
-  const delinquentState = { sort: "amount_due", dir: -1, q: "" };
+  const delinquentState = { sort: "amount_due", dir: -1, q: "", city: "" };
 
-  async function fetchDelinquent(q) {
-    const res = await fetch("/api/delinquent" + (q ? "?q=" + encodeURIComponent(q) : ""), {
+  async function fetchDelinquent(q, city) {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (city) params.set("city", city);
+    const qs = params.toString();
+    const res = await fetch("/api/delinquent" + (qs ? "?" + qs : ""), {
       headers: { Authorization: "Bearer " + getToken() },
       cache: "no-store",
     });
     if (res.status === 402) return { paywall: true };
     return await res.json();
+  }
+
+  function updateDelinquentLayer(rows) {
+    const features = rows
+      .filter((d) => isFinite(d.lon) && isFinite(d.lat))
+      .map((d) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [d.lon, d.lat] },
+        properties: d,
+      }));
+    const data = { type: "FeatureCollection", features };
+    if (map.getSource("delinquent")) {
+      map.getSource("delinquent").setData(data);
+    } else {
+      map.addSource("delinquent", { type: "geojson", data });
+      map.addLayer({
+        id: "delinquent-dots",
+        type: "circle",
+        source: "delinquent",
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 4.5, 10, 7, 14, 10],
+          "circle-color": "#dc2626",
+          "circle-stroke-color": "#1f2937",
+          "circle-stroke-width": 2,
+          "circle-opacity": 0.95,
+        },
+      });
+    }
+    map.setLayoutProperty("delinquent-dots", "visibility", "visible");
+    document.getElementById("legend-delinquent").classList.remove("hidden");
   }
 
   async function openDelinquent() {
@@ -1228,8 +1278,8 @@
     if (!delinquentCache) {
       busy(true);
       try {
-        let r = await fetchDelinquent("");
-        if (r.paywall && (await tryRenew())) r = await fetchDelinquent("");
+        let r = await fetchDelinquent("", delinquentState.city);
+        if (r.paywall && (await tryRenew())) r = await fetchDelinquent("", delinquentState.city);
         if (r.paywall) {
           uncheckToggle("delinquent-toggle");
           lock.classList.remove("hidden");
@@ -1265,12 +1315,18 @@
   function renderDelinquent() {
     const body = document.getElementById("delinquent-body");
     const rows = delinquentRows();
+    updateDelinquentLayer(rows);
     const arrow = (col) => delinquentState.sort === col ? (delinquentState.dir < 0 ? " ▼" : " ▲") : "";
     const shownNote = delinquentMeta
       ? `Showing top ${fmtInt.format(rows.length)} of ${fmtInt.format(delinquentMeta.total)} accounts · ${fmtUSD.format(delinquentMeta.total_owed)} owed county-wide`
       : "";
     const controls = `<div class="deal-controls">
       <input type="search" id="dq-search" placeholder="Search owner or address…" value="${esc(delinquentState.q)}" style="flex:1;min-width:160px">
+      <select id="dq-city">
+        <option value="">All cities</option>
+        ${["UNIVERSITY PARK", "HIGHLAND PARK", "DALLAS", "IRVING", "GRAND PRAIRIE", "GARLAND", "MESQUITE", "RICHARDSON"].map((c) =>
+          `<option${delinquentState.city === c ? " selected" : ""} value="${c}">${c[0] + c.slice(1).toLowerCase()}</option>`).join("")}
+      </select>
       <span class="deal-count">${shownNote}</span>
     </div>`;
     const cards = rows.map((d) => {
@@ -1278,16 +1334,18 @@
       const links = [
         tps ? `<a href="${tps}" target="_blank" rel="noopener" title="Phone lookup">\u{1F4DE}</a>` : "",
         d.account ? `<a href="https://www.dallascad.org/AcctDetail.aspx?ID=${encodeURIComponent(d.account)}" target="_blank" rel="noopener" title="DCAD record">\u{1F4DC}</a>` : "",
+        isFinite(d.lon) && isFinite(d.lat)
+          ? `<a href="#" class="deal-fly" data-addr="${esc(d.situs_addr || d.address || "")}" data-lon="${d.lon}" data-lat="${d.lat}" title="Fly to on map">\u{1F5FA}️</a>` : "",
       ].filter(Boolean).join("");
       const tags = [
-        d.city ? esc(d.city) : "",
+        d.situs_city ? esc(d.situs_city) : (d.city ? esc(d.city) + " (mailing)" : ""),
         d.years_delinquent ? `${d.years_delinquent} yr${d.years_delinquent === 1 ? "" : "s"} behind` : "",
       ].filter(Boolean).map((t) => `<span class="dc-tag">${t}</span>`).join("")
         + (d.suit ? `<span class="dc-tag suit">\u{2696}️ suit ${esc(d.causeno || "pending")}</span>` : "");
       return `<div class="dc-card">
         <div class="dc-card-main">
           <div class="dc-card-address">${esc(d.owner || "?")}</div>
-          <div class="dc-card-sub"><span>${esc(d.address || "")}</span>${tags}</div>
+          <div class="dc-card-sub"><span>${esc(d.situs_addr || d.address || "")}</span>${tags}</div>
         </div>
         <div class="dc-card-stats">
           <div class="dc-stat dc-stat-highlight"><span class="dc-stat-label">Amount due</span><span class="dc-stat-val">${fmtUSD.format(d.amount_due || 0)}</span></div>
@@ -1308,7 +1366,17 @@
       body.innerHTML = controls + "Searching…";
       busy(true);
       try {
-        const r = await fetchDelinquent(delinquentState.q);
+        const r = await fetchDelinquent(delinquentState.q, delinquentState.city);
+        if (!r.paywall) { delinquentCache = r.delinquent; delinquentMeta = { total: r.total, total_owed: r.total_owed }; }
+        renderDelinquent();
+      } finally { busy(false); }
+    });
+    document.getElementById("dq-city").addEventListener("change", async (e) => {
+      delinquentState.city = e.target.value;
+      body.innerHTML = controls + "Loading…";
+      busy(true);
+      try {
+        const r = await fetchDelinquent(delinquentState.q, delinquentState.city);
         if (!r.paywall) { delinquentCache = r.delinquent; delinquentMeta = { total: r.total, total_owed: r.total_owed }; }
         renderDelinquent();
       } finally { busy(false); }
@@ -1324,7 +1392,7 @@
 
   function delinquentCSV() {
     if (!delinquentCache) return;
-    const cols = ["account", "owner", "address", "city", "state", "zip", "amount_due", "years_delinquent", "oldest_year", "due_date", "suit", "causeno"];
+    const cols = ["account", "owner", "address", "city", "state", "zip", "situs_addr", "situs_city", "situs_zip", "amount_due", "years_delinquent", "oldest_year", "due_date", "suit", "causeno"];
     const q2 = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const csv = [cols.join(",")].concat(delinquentRows().map((d) => cols.map((c) => q2(d[c])).join(","))).join("\n");
     const a = document.createElement("a");
@@ -1339,11 +1407,15 @@
       openDelinquent();
     } else {
       document.getElementById("delinquent-panel").classList.add("hidden");
+      if (map.getLayer("delinquent-dots")) map.setLayoutProperty("delinquent-dots", "visibility", "none");
+      document.getElementById("legend-delinquent").classList.add("hidden");
     }
   });
   document.getElementById("delinquent-close").addEventListener("click", () => {
     document.getElementById("delinquent-panel").classList.add("hidden");
     uncheckToggle("delinquent-toggle");
+    if (map.getLayer("delinquent-dots")) map.setLayoutProperty("delinquent-dots", "visibility", "none");
+    document.getElementById("legend-delinquent").classList.add("hidden");
   });
   document.getElementById("delinquent-collapse").addEventListener("click", (e) => {
     const panel = document.getElementById("delinquent-panel");

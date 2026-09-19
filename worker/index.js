@@ -417,9 +417,11 @@ async function handleDeals(request, env, ctx, url) {
 // filtered to accounts with a currently-owed balance and loaded into D1
 // offline (pipeline/work/delinquent_schema.sql + a one-off parse of the raw
 // fixed-width file — see git history for the import). No lat/lon: the TRW
-// file only carries the owner's mailing address, not the parcel's situs
-// address, so this ships as a searchable/sortable list, not a map layer.
-// Requires a DirtFound Pro token (same paywall as the Deal Sheet).
+// situs_addr/situs_city/situs_zip/lon/lat are the parcel's actual property
+// location (joined in from the DCAD certified roll by account number) —
+// "address"/"city"/"zip" above are the owner's mailing address, kept for
+// contact-lookup purposes. Requires a DirtFound Pro token (same paywall as
+// the Deal Sheet).
 async function handleDelinquent(request, env, url) {
   const auth = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   if (!(await checkToken(env, auth))) {
@@ -427,26 +429,36 @@ async function handleDelinquent(request, env, url) {
   }
 
   const q = (url.searchParams.get("q") || "").trim();
+  const city = (url.searchParams.get("city") || "").trim().toUpperCase();
   const limit = 500;
+  const cols = "account, owner, address, city, state, zip, parcel_name, " +
+    "situs_addr, situs_city, situs_zip, lon, lat, " +
+    "amount_due, years_delinquent, oldest_year, due_date, suit, causeno";
+  const colsD = cols.split(", ").map((c) => `d.${c}`).join(", ");
 
   let results;
   if (q) {
     const terms = q.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean).slice(0, 6);
     if (!terms.length) return json({ delinquent: [], total: 0 });
     const match = terms.map((t) => `"${t}"*`).join(" ");
-    const stmt = env.OWNERS.prepare(
-      `SELECT d.account, d.owner, d.address, d.city, d.state, d.zip, d.parcel_name,
-              d.amount_due, d.years_delinquent, d.oldest_year, d.due_date, d.suit, d.causeno
-       FROM delinquent_fts f JOIN delinquent_dallas d ON d.rowid = f.rowid
-       WHERE delinquent_fts MATCH ? ORDER BY d.amount_due DESC LIMIT ?`
-    ).bind(match, limit);
+    const stmt = city
+      ? env.OWNERS.prepare(
+          `SELECT ${colsD} FROM delinquent_fts f JOIN delinquent_dallas d ON d.rowid = f.rowid
+           WHERE delinquent_fts MATCH ? AND d.situs_city = ? ORDER BY d.amount_due DESC LIMIT ?`
+        ).bind(match, city, limit)
+      : env.OWNERS.prepare(
+          `SELECT ${colsD} FROM delinquent_fts f JOIN delinquent_dallas d ON d.rowid = f.rowid
+           WHERE delinquent_fts MATCH ? ORDER BY d.amount_due DESC LIMIT ?`
+        ).bind(match, limit);
     results = (await stmt.all()).results;
   } else {
-    const stmt = env.OWNERS.prepare(
-      `SELECT account, owner, address, city, state, zip, parcel_name,
-              amount_due, years_delinquent, oldest_year, due_date, suit, causeno
-       FROM delinquent_dallas ORDER BY amount_due DESC LIMIT ?`
-    ).bind(limit);
+    const stmt = city
+      ? env.OWNERS.prepare(
+          `SELECT ${cols} FROM delinquent_dallas WHERE situs_city = ? ORDER BY amount_due DESC LIMIT ?`
+        ).bind(city, limit)
+      : env.OWNERS.prepare(
+          `SELECT ${cols} FROM delinquent_dallas ORDER BY amount_due DESC LIMIT ?`
+        ).bind(limit);
     results = (await stmt.all()).results;
   }
 

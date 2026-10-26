@@ -31,10 +31,9 @@ window.APP_CONFIG = {
 
   basemapStyle: "https://tiles.openfreemap.org/styles/positron",
 
-  // Initial view: Dallas–Fort Worth metro, still below handoffZoom so the
-  // county choropleth shows first.
-  center: [-97.03, 32.82],
-  zoom: 8.3,
+  // Initial view: the city of Dallas, past handoffZoom so parcels show on load.
+  center: [-96.80, 32.79],
+  zoom: 11,
 
   // Zoom at which counties fade out and parcels take over.
   handoffZoom: 10,

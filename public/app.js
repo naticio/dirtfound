@@ -57,8 +57,23 @@
   const getEmptyTile = async () =>
     (emptyTile ??= await (await new OffscreenCanvas(1, 1).convertToBlob({ type: "image/png" })).arrayBuffer());
 
+  // Public tile servers sometimes stall a connection for 30s+ (geo.dot.gov
+  // does it to browsers). A tile that never settles keeps the map from going
+  // idle, so give up after a timeout and retry once.
+  async function fetchWithTimeout(url, signal, { timeoutMs = 8000, tries = 2 } = {}) {
+    for (let attempt = 1; ; attempt++) {
+      const timeout = AbortSignal.timeout(timeoutMs);
+      try {
+        return await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+      } catch (err) {
+        if (signal?.aborted || attempt >= tries) throw err;
+      }
+    }
+  }
+
   async function decodeTile(url, signal) {
-    const res = await fetch(url, { signal });
+    if (!url) return null;
+    const res = await fetchWithTimeout(url, signal);
     if (!res.ok) return null;
     const bmp = await createImageBitmap(await res.blob());
     const canvas = new OffscreenCanvas(bmp.width, bmp.height);
@@ -67,9 +82,44 @@
     return { canvas, ctx, img: ctx.getImageData(0, 0, bmp.width, bmp.height) };
   }
 
+  // US DOT noise tiles for the metros we cover are mirrored to /noise/ (see
+  // pipeline/noise_tiles.mjs) so they load as static assets; index.json lists
+  // the tiles that have contours, everything else in those areas is blank.
+  const NOISE_DOT = "https://geo.dot.gov/server/rest/services/Hosted/NTAD_Noise_2020_CONUS_Aviation/MapServer/tile";
+  let noiseIndex = null;
+  const loadNoiseIndex = () => (noiseIndex ??= fetch("noise/index.json")
+    .then((r) => r.json())
+    .then((d) => ({ ...d, tiles: new Set(d.tiles) }))
+    .catch(() => null));
+  const lngToTile = (lng, z) => Math.floor((lng + 180) / 360 * 2 ** z);
+  const latToTile = (lat, z) => {
+    const r = lat * Math.PI / 180;
+    return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z);
+  };
+  // Local mirror URL, null for a known-blank tile, or the DOT server outside the mirror.
+  async function noiseTileUrl(z, y, x) {
+    const idx = await loadNoiseIndex();
+    if (idx && z >= idx.minzoom && z <= idx.maxzoom) {
+      if (idx.tiles.has(`${z}/${y}/${x}`)) return `noise/${z}/${y}/${x}.png`;
+      const mirrored = Object.values(idx.areas).some(([w, s, e, n]) =>
+        x >= lngToTile(w, z) && x <= lngToTile(e, z) && y >= latToTile(n, z) && y <= latToTile(s, z));
+      if (mirrored) return null;
+    }
+    return `${NOISE_DOT}/${z}/${y}/${x}`;
+  }
+
   maplibregl.addProtocol("recolor", async (params, abortController) => {
-    const [, palette, url] = params.url.match(/^recolor:\/\/(\w+)\/(.+)$/);
-    const tile = await decodeTile(url, abortController.signal);
+    const [, palette, rest] = params.url.match(/^recolor:\/\/(\w+)\/(.+)$/);
+    let url = rest;
+    const noise = rest.match(/^noise\/(\d+)\/(\d+)\/(\d+)$/);
+    if (noise) url = await noiseTileUrl(+noise[1], +noise[2], +noise[3]);
+    let tile = null;
+    try {
+      tile = await decodeTile(url, abortController.signal);
+    } catch (err) {
+      if (abortController.signal.aborted) throw err;
+      console.warn("tile failed", url, err.message);
+    }
     if (!tile) return { data: await getEmptyTile() };
     const { canvas, ctx, img } = tile;
     const px = img.data, w = img.width, paint = RECOLOR[palette];
@@ -208,8 +258,15 @@
   }
   // Show while the map is pulling tiles; hide when it settles.
   let tilesBusy = false;
-  map.on("sourcedataloading", () => { if (!tilesBusy) { tilesBusy = true; busy(true); } });
-  map.on("idle", () => { if (tilesBusy) { tilesBusy = false; busy(false); } });
+  let tilesBusyTimer = null;
+  const tilesDone = () => { clearTimeout(tilesBusyTimer); if (tilesBusy) { tilesBusy = false; busy(false); } };
+  map.on("sourcedataloading", () => {
+    if (!tilesBusy) { tilesBusy = true; busy(true); }
+    // Backstop: never leave the bar running if some tile never settles.
+    clearTimeout(tilesBusyTimer);
+    tilesBusyTimer = setTimeout(tilesDone, 20000);
+  });
+  map.on("idle", tilesDone);
 
   // Contact lookup links. County data lists people as "LASTNAME FIRST MIDDLE";
   // flip to "First Middle Lastname" for people-search sites. Entities (LLC,
@@ -882,7 +939,7 @@
       why: "Tenants notice. Future buyers notice. Appraisers notice.",
       kind: "raster", minzoom: 8, maxzoom: 12,
       // US DOT National Transportation Noise Map (2020 aviation, 24-h LAeq).
-      tiles: "recolor://noise/https://geo.dot.gov/server/rest/services/Hosted/NTAD_Noise_2020_CONUS_Aviation/MapServer/tile/{z}/{y}/{x}",
+      tiles: "recolor://noise/noise/{z}/{y}/{x}",
       legend: [
         { swatch: "background:#fff050", text: "45–50 dB" },
         { swatch: "background:#ffd600", text: "50–55 dB" },
@@ -1115,16 +1172,38 @@
   }
 
   const riskLoads = {};
+  // Recent results per layer, each fetched for a padded box around the view.
+  // Panning or zooming within a box reuses it instead of re-querying; a box
+  // isn't reused once zoomed in well past it, since its geometry was
+  // simplified for that wider extent.
+  const riskCache = {};
+  const area = ([w, s, e, n]) => (e - w) * (n - s);
   async function loadRiskLayer(L) {
     if (map.getZoom() < L.minzoom) return;
     const b = map.getBounds();
-    const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((n) => +n.toFixed(5));
-    if ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) > 1.5) return;
+    const view = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    if (area(view) > 1.5) return;
+    const cache = (riskCache[L.id] ??= []);
+    const hit = cache.find(({ bbox: [w, s, e, n] }) =>
+      view[0] >= w && view[1] >= s && view[2] <= e && view[3] <= n && (view[2] - view[0]) * 3 >= e - w);
     riskLoads[L.id]?.abort();
+    if (hit) {
+      cache.splice(cache.indexOf(hit), 1);
+      cache.unshift(hit);
+      map.getSource(`risk-${L.id}`)?.setData(hit.geojson);
+      return;
+    }
+    const padX = (view[2] - view[0]) / 4, padY = (view[3] - view[1]) / 4;
+    let bbox = [view[0] - padX, view[1] - padY, view[2] + padX, view[3] + padY];
+    if (area(bbox) > 1.5) bbox = view;
+    bbox = bbox.map((n) => +n.toFixed(5));
     const ctrl = (riskLoads[L.id] = new AbortController());
     busy(true);
     try {
       const geojson = await window.DIRT_RISK.layer(L.id, bbox, ctrl.signal);
+      // A source that failed shouldn't stick for this area, so don't cache it.
+      if (!geojson.partial) cache.unshift({ bbox, geojson });
+      cache.length = Math.min(cache.length, 4);
       if (riskState.on.has(L.id)) map.getSource(`risk-${L.id}`)?.setData(geojson);
     } catch (err) {
       if (err.name !== "AbortError") console.error(err);
@@ -1184,8 +1263,7 @@
     const fx = (lngLat.lng + 180) / 360 * n;
     const lat = lngLat.lat * Math.PI / 180;
     const fy = (1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n;
-    const tile = await decodeTile(
-      `https://geo.dot.gov/server/rest/services/Hosted/NTAD_Noise_2020_CONUS_Aviation/MapServer/tile/${z}/${Math.floor(fy)}/${Math.floor(fx)}`);
+    const tile = await decodeTile(await noiseTileUrl(z, Math.floor(fy), Math.floor(fx)));
     const clear = { status: "clear", detail: "Outside mapped aircraft-noise contours (under 45 dB)" };
     if (!tile) return clear;
     const { img } = tile;

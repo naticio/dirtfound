@@ -136,6 +136,7 @@
     return {
       type: "FeatureCollection",
       features: results.flatMap((r) => (r.status === "fulfilled" ? r.value : [])),
+      partial: results.some((r) => r.status === "rejected"),
     };
   }
   // Meters from a point to the nearest vertex-segment of any (multi)line/polygon.

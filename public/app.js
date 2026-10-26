@@ -14,6 +14,74 @@
   const protocol = new pmtiles.Protocol();
   maplibregl.addProtocol("pmtiles", protocol.tile);
 
+  // recolor://<palette>/<https url> — fetch a raster tile and repaint its
+  // pixels in the browser. Lets public rasters (TxWRAP wildfire, US DOT
+  // noise) match DirtFound's map style when their servers can't restyle them.
+  const NOISE_BINS = [
+    // [source rgb, dB label, repainted rgba]
+    [[255, 193, 7], "45–50", [255, 240, 80, 170]],
+    [[255, 128, 0], "50–55", [255, 214, 0, 200]],
+    [[255, 0, 0], "55–60", [255, 170, 0, 215]],
+    [[255, 51, 153], "60–70", [255, 110, 0, 225]],
+    [[163, 0, 204], "70–80", [232, 56, 13, 235]],
+    [[82, 0, 204], "80–90", [200, 20, 10, 240]],
+    [[0, 0, 255], "90+", [200, 20, 10, 240]],
+  ];
+  const nearestNoiseBin = (r, g, b) => {
+    let best = null, bd = Infinity;
+    for (const bin of NOISE_BINS) {
+      const [R, G, B] = bin[0];
+      const d = (r - R) ** 2 + (g - G) ** 2 + (b - B) ** 2;
+      if (d < bd) { bd = d; best = bin; }
+    }
+    return best;
+  };
+  const RECOLOR = {
+    // TxWRAP Functional WUI, served as index colors (value in the red channel).
+    wui(px, i, x, y) {
+      if (px[i + 3] === 0 || px[i + 1] !== 0) return [0, 0, 0, 0];
+      switch (px[i]) {
+        case 4: return [230, 0, 126, 150];  // transmission zone — solid magenta
+        case 1: return [200, 0, 110, 205];  // primary exposure — deeper magenta
+        case 8: return [255, 60, 160, 120]; // ember source
+        case 2: return (x + y) % 10 === 0 ? [255, 43, 43, 150] : [0, 0, 0, 0]; // thin hatch — ember zone
+        default: return [0, 0, 0, 0];
+      }
+    },
+    noise(px, i) {
+      if (px[i + 3] < 20) return [0, 0, 0, 0];
+      return nearestNoiseBin(px[i], px[i + 1], px[i + 2])[2];
+    },
+  };
+  let emptyTile = null;
+  const getEmptyTile = async () =>
+    (emptyTile ??= await (await new OffscreenCanvas(1, 1).convertToBlob({ type: "image/png" })).arrayBuffer());
+
+  async function decodeTile(url, signal) {
+    const res = await fetch(url, { signal });
+    if (!res.ok) return null;
+    const bmp = await createImageBitmap(await res.blob());
+    const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(bmp, 0, 0);
+    return { canvas, ctx, img: ctx.getImageData(0, 0, bmp.width, bmp.height) };
+  }
+
+  maplibregl.addProtocol("recolor", async (params, abortController) => {
+    const [, palette, url] = params.url.match(/^recolor:\/\/(\w+)\/(.+)$/);
+    const tile = await decodeTile(url, abortController.signal);
+    if (!tile) return { data: await getEmptyTile() };
+    const { canvas, ctx, img } = tile;
+    const px = img.data, w = img.width, paint = RECOLOR[palette];
+    for (let i = 0; i < px.length; i += 4) {
+      const p = i >> 2;
+      const [r, g, b, a] = paint(px, i, p % w, (p / w) | 0);
+      px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = a;
+    }
+    ctx.putImageData(img, 0, 0);
+    return { data: await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer() };
+  });
+
   // owner_status (v2 tiles) with owner_origin (v1/statewide tiles) fallback.
   const STATUS_EXPR = ["coalesce", ["get", "owner_status"], ["get", "owner_origin"], "Unknown"];
   const STATUS_COLOR = [
@@ -80,6 +148,7 @@
     wireViolations();
     wireTaxSales();
     wireDcadSignals();
+    wireRiskLayers();
 
     map.addLayer({
       id: "counties-fill",
@@ -202,7 +271,7 @@
   }
 
   // Stamp tax-sale / violation warnings onto an open popup for this property.
-  async function annotatePopup(popup, lngLat, addrStr, baseHTML) {
+  async function annotatePopup(popup, lngLat, addrStr) {
     try {
       busy(true);
       const [v, t] = await Promise.all([getViolationsData(), getTaxSalesData()]);
@@ -221,9 +290,9 @@
       if (viols.length) {
         b.push(`\u26A0\uFE0F ${viols.length} open code case${viols.length > 1 ? "s" : ""} \u2014 ${esc(viols[0].properties.desc)}`);
       }
-      if (popup.isOpen()) {
-        popup.setHTML(`<div class="popup-badges">${b.join("<br>")}</div>` + baseHTML);
-      }
+      // Prepend rather than setHTML, so the async due-diligence list below survives.
+      const content = popup.isOpen() && popup.getElement()?.querySelector(".maplibregl-popup-content");
+      if (content) content.insertAdjacentHTML("afterbegin", `<div class="popup-badges">${b.join("<br>")}</div>`);
     } catch (err) {
       /* badges are best-effort */
     } finally {
@@ -315,11 +384,14 @@
         if (counties.length) html = countyPopupHTML(counties[0].properties);
       }
       if (html) {
-        const popup = new maplibregl.Popup({ maxWidth: "320px" })
+        // Property-level clicks get the 8-point due-diligence list underneath.
+        const withChecks = annotateWith !== null && map.getZoom() >= 12;
+        const popup = new maplibregl.Popup({ maxWidth: "340px" })
           .setLngLat(e.lngLat)
-          .setHTML(html)
+          .setHTML(withChecks ? html + `<div class="dd-check"><span class="dd-loading">Running 8-point due diligence…</span></div>` : html)
           .addTo(map);
-        if (annotateWith !== null) annotatePopup(popup, e.lngLat, annotateWith, html);
+        if (annotateWith !== null) annotatePopup(popup, e.lngLat, annotateWith);
+        if (withChecks) riskCheckPopup(popup, e.lngLat);
       }
     });
   }
@@ -642,10 +714,11 @@
         const html = searchResultPopupHTML(f.properties);
         const popup = new maplibregl.Popup({ maxWidth: "320px" })
           .setLngLat(f.geometry.coordinates)
-          .setHTML(html)
+          .setHTML(html + `<div class="dd-check"><span class="dd-loading">Running 8-point due diligence…</span></div>`)
           .addTo(map);
-        annotatePopup(popup, { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] },
-          f.properties.addr, html);
+        const ll = { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] };
+        annotatePopup(popup, ll, f.properties.addr);
+        riskCheckPopup(popup, ll);
       });
     }
   }
@@ -757,6 +830,391 @@
   // Some of these cover 100k+ parcels, too many to ship as one blob, so
   // each is fetched scoped to the current map viewport and refetched on
   // pan/zoom while its toggle is checked.
+
+  // ---- Due-diligence map layers (Layers menu) ---------------------------
+  //
+  // Eight "check before you buy" overlays, styled to read like the classic
+  // Australian property-report maps: magenta fire zones, yellow→red noise
+  // bands, green flood fill with purple dashed edges and magenta elevation
+  // lines, blue sewer mains, fat red powerlines, pink/blue/green zoning with
+  // red lot lines, orange dotted easements, amber heritage blocks.
+  //
+  // Vector layers come back as GeoJSON from DIRT_RISK.layer() (risk-sources.js
+  // queries the city/county/federal ArcGIS services and trims the
+  // attributes); raster layers are public tiles repainted by recolor://.
+
+  const ZONE_COLOR = [
+    "match", ["get", "cat"],
+    "res-single", "#dcb6c4",
+    "res-multi", "#c792ab",
+    "commercial", "#6aa9d8",
+    "office", "#f06aa8",
+    "mixed", "#9d82b8",
+    "industrial", "#ff9a3c",
+    "park", "#22e05a",
+    "public", "#f3e84a",
+    "pd", "#c9b8d8",
+    "#e7dde2",
+  ];
+
+  const RISK_LAYERS = [
+    {
+      id: "wildfire", icon: "🔥", label: "Wildfire zones", src: "Texas A&M Forest Service TxWRAP",
+      why: "Higher build costs, higher insurance, harder resale",
+      kind: "raster", minzoom: 9, maxzoom: 17,
+      // TxWRAP Functional WUI, values drawn as index colors then painted
+      // BAL-map style in the browser (see the "recolor" protocol).
+      tiles: "recolor://wui/https://gis.texaswildfirerisk.com/server/rest/services/TxWRAP/functional_wui_img/ImageServer/exportImage" +
+        "?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&interpolation=RSP_NearestNeighbor&f=image" +
+        "&renderingRule=" + encodeURIComponent(JSON.stringify({
+          rasterFunction: "Colormap",
+          rasterFunctionArguments: { Colormap: [[1, 1, 0, 0], [2, 2, 0, 0], [4, 4, 0, 0], [8, 8, 0, 0]] },
+        })),
+      legend: [
+        { swatch: "background:rgba(230,0,126,.8)", text: "Wildfire transmission zone (vegetation)" },
+        { swatch: "background:rgba(200,0,110,.9)", text: "Primary exposure — homes on the edge" },
+        { swatch: "background:repeating-linear-gradient(135deg,#ff2b2b 0 1px,transparent 1px 4px)", text: "Secondary exposure — ember zone" },
+      ],
+      paint: { "raster-opacity": 0.85, "raster-resampling": "nearest" },
+    },
+    {
+      id: "noise", icon: "✈️", label: "Flight paths", src: "US DOT noise map (2020)",
+      why: "Tenants notice. Future buyers notice. Appraisers notice.",
+      kind: "raster", minzoom: 8, maxzoom: 12,
+      // US DOT National Transportation Noise Map (2020 aviation, 24-h LAeq).
+      tiles: "recolor://noise/https://geo.dot.gov/server/rest/services/Hosted/NTAD_Noise_2020_CONUS_Aviation/MapServer/tile/{z}/{y}/{x}",
+      legend: [
+        { swatch: "background:#fff050", text: "45–50 dB" },
+        { swatch: "background:#ffd600", text: "50–55 dB" },
+        { swatch: "background:#ffaa00", text: "55–60 dB" },
+        { swatch: "background:#ff6e00", text: "60–70 dB" },
+        { swatch: "background:#e8380d", text: "70 dB+" },
+      ],
+      paint: { "raster-opacity": 0.8, "raster-resampling": "linear" },
+    },
+    {
+      id: "flood", icon: "🌊", label: "Flood zones", src: "FEMA National Flood Hazard Layer",
+      why: "Insurance can double, or get declined altogether",
+      kind: "vector", minzoom: 11,
+      legend: [
+        { swatch: "background:rgba(125,214,20,.55);border:1.5px dashed #7b2cbf", text: "100-yr floodplain (Zone A/AE)" },
+        { swatch: "background:rgba(214,240,90,.5);border:1.5px dashed #7b2cbf", text: "500-yr / 0.2% chance" },
+        { swatch: "background:none;border-top:2px solid #e0169a;border-radius:0;height:0", text: "Base flood elevation (ft)" },
+      ],
+      layers: [
+        { type: "fill", filter: ["!=", ["get", "kind"], "bfe"], paint: {
+          "fill-color": ["case", ["==", ["get", "sfha"], true], "#7dd614", "#d6f05a"],
+          "fill-opacity": ["case", ["==", ["get", "sfha"], true], 0.5, 0.4],
+        } },
+        { type: "line", filter: ["!=", ["get", "kind"], "bfe"], paint: {
+          "line-color": "#7b2cbf", "line-width": 1.6, "line-dasharray": [2, 1.5],
+        } },
+        { type: "line", filter: ["==", ["get", "kind"], "bfe"], paint: {
+          "line-color": "#e0169a", "line-width": 1.6,
+        } },
+        { type: "symbol", filter: ["==", ["get", "kind"], "bfe"], minzoom: 14,
+          layout: {
+            "symbol-placement": "line-center", "text-field": ["to-string", ["get", "elev"]],
+            "text-size": 11, "text-font": ["Noto Sans Bold"], "text-rotation-alignment": "map",
+          },
+          paint: { "text-color": "#e0169a", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } },
+      ],
+    },
+    {
+      id: "sewer", icon: "🚽", label: "Sewer lines", src: "City of Dallas plats + DWU projects",
+      why: "You can't build over them — a deal killer for development",
+      kind: "vector", minzoom: 13,
+      legend: [
+        { swatch: "background:none;border-top:3px solid #5b7fb5;border-radius:0;height:0", text: "Wastewater easement (sewer main)" },
+        { swatch: "background:none;border-top:3px dashed #5b7fb5;border-radius:0;height:0", text: "Sewer pipe project (DWU)" },
+      ],
+      layers: [
+        { type: "line", filter: ["==", ["get", "kind"], "easement"], layout: { "line-cap": "round", "line-join": "round" }, paint: {
+          "line-color": "#5b7fb5", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.5, 18, 3.5],
+        } },
+        { type: "line", filter: ["==", ["get", "kind"], "project"], paint: {
+          "line-color": "#5b7fb5", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.5, 18, 3.5], "line-dasharray": [2, 1.5],
+        } },
+      ],
+    },
+    {
+      id: "powerlines", icon: "⚡", label: "Powerlines", src: "HIFLD transmission lines",
+      why: "Visual, valuation and buyer-perception issue",
+      kind: "vector", minzoom: 9,
+      legend: [{ swatch: "background:none;border-top:4px solid #ff1a1a;border-radius:0;height:0", text: "Transmission line" }],
+      layers: [
+        { type: "line", layout: { "line-cap": "round", "line-join": "round" }, paint: {
+          "line-color": "#ff1a1a", "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2, 16, 5],
+        } },
+        { type: "symbol", minzoom: 14, layout: {
+          "symbol-placement": "line", "text-field": ["get", "label"], "text-size": 10.5,
+          "text-font": ["Noto Sans Regular"],
+        }, paint: { "text-color": "#b00000", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } },
+      ],
+    },
+    {
+      id: "zoning", icon: "🏘️", label: "Zoning", src: "City of Dallas · University Park",
+      why: "Determines what you can actually build or subdivide",
+      kind: "vector", minzoom: 13,
+      legend: [
+        { swatch: "background:#dcb6c4", text: "Single-family residential" },
+        { swatch: "background:#c792ab", text: "Multifamily / townhome" },
+        { swatch: "background:#6aa9d8", text: "Commercial / retail" },
+        { swatch: "background:#f06aa8", text: "Office" },
+        { swatch: "background:#9d82b8", text: "Mixed use / central area" },
+        { swatch: "background:#ff9a3c", text: "Industrial" },
+        { swatch: "background:#c9b8d8", text: "Planned development (PD)" },
+        { swatch: "background:#f3e84a", text: "Parking / public" },
+        { swatch: "background:#22e05a", text: "Park / open space" },
+      ],
+      layers: [
+        { type: "fill", paint: { "fill-color": ZONE_COLOR, "fill-opacity": 0.72 } },
+        { type: "line", paint: { "line-color": "#ff2b2b", "line-width": 0.9 } },
+        { type: "symbol", minzoom: 15, layout: {
+          "text-field": ["get", "code"], "text-size": 11, "text-font": ["Noto Sans Regular"],
+        }, paint: { "text-color": "#3a2530", "text-halo-color": "rgba(255,255,255,.7)", "text-halo-width": 1 } },
+      ],
+    },
+    {
+      id: "easements", icon: "📐", label: "Easements", src: "City of Dallas digitized plats",
+      why: "Someone else has rights over your land",
+      kind: "vector", minzoom: 15,
+      legend: [{ swatch: "background:none;border:2px dotted #ff8a00", text: "Easement / right-of-way" }],
+      layers: [
+        { type: "fill", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": "#ff8a00", "fill-opacity": 0.08 } },
+        { type: "line", paint: { "line-color": "#ff8a00", "line-width": 2.2, "line-dasharray": [1, 1.2] } },
+      ],
+    },
+    {
+      id: "heritage", icon: "🏛️", label: "Heritage & historic", src: "City of Dallas · National Register (NPS)",
+      why: "Limits what you can renovate, demolish or develop",
+      kind: "vector", minzoom: 11,
+      legend: [
+        { swatch: "background:#f9d86b;border:1.5px solid #e88a00", text: "Landmark / National Register" },
+        { swatch: "background:rgba(249,216,107,.35);border:1.5px dashed #e88a00", text: "Historic / conservation district" },
+      ],
+      layers: [
+        { type: "fill", paint: {
+          "fill-color": "#f9d86b",
+          "fill-opacity": ["case", ["==", ["get", "kind"], "district"], 0.3, 0.8],
+        } },
+        { type: "line", paint: { "line-color": "#e88a00", "line-width": 1.5 } },
+        { type: "circle", filter: ["==", ["geometry-type"], "Point"], paint: {
+          "circle-radius": 6, "circle-color": "#f9d86b", "circle-stroke-color": "#e88a00", "circle-stroke-width": 2,
+        } },
+      ],
+    },
+  ];
+
+  const riskState = { on: new Set(), satellite: false };
+
+  function wireRiskLayers() {
+    const list = document.getElementById("layer-list");
+    list.innerHTML =
+      `<div class="basemap-seg" role="group" aria-label="Base map">
+         <button type="button" data-base="map" class="on">Map</button>
+         <button type="button" data-base="satellite">Satellite</button>
+       </div>` +
+      RISK_LAYERS.map((L, i) => `
+        <label class="layer-row">
+          <input type="checkbox" data-risk="${L.id}" />
+          <span class="layer-icon">${L.icon}</span>
+          <span class="layer-text"><b>${i + 1}. ${esc(L.label)}</b><small>${esc(L.why)}</small></span>
+        </label>`).join("");
+
+    // Layers dropdown open/close, mirroring the Filters dropdown.
+    const btn = document.getElementById("btn-layers");
+    const dd = document.getElementById("dd-layers");
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.getElementById("dd-filters").classList.add("hidden");
+      dd.classList.toggle("hidden");
+    });
+    document.getElementById("btn-filters").addEventListener("click", () => dd.classList.add("hidden"));
+    dd.addEventListener("click", (e) => e.stopPropagation());
+    document.addEventListener("click", () => dd.classList.add("hidden"));
+
+    list.querySelectorAll(".basemap-seg button").forEach((b) => {
+      b.addEventListener("click", () => {
+        list.querySelectorAll(".basemap-seg button").forEach((x) => x.classList.toggle("on", x === b));
+        setSatellite(b.dataset.base === "satellite");
+      });
+    });
+
+    list.querySelectorAll("input[data-risk]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const L = RISK_LAYERS.find((x) => x.id === cb.dataset.risk);
+        cb.checked ? riskState.on.add(L.id) : riskState.on.delete(L.id);
+        setRiskVisible(L, cb.checked);
+        if (cb.checked && L.kind === "vector") loadRiskLayer(L);
+        riskLayersChanged();
+      });
+    });
+
+    map.on("zoomend", () => { if (riskState.on.size) riskLayersChanged(); });
+
+    let moveTimer = null;
+    map.on("moveend", () => {
+      clearTimeout(moveTimer);
+      moveTimer = setTimeout(() => {
+        RISK_LAYERS.filter((L) => riskState.on.has(L.id) && L.kind === "vector").forEach(loadRiskLayer);
+      }, 350);
+    });
+
+    // Lot lines — faint parcel outlines that appear with any overlay, so the
+    // colored zones read against individual properties like a plat map.
+    map.addLayer({
+      id: "parcel-lines",
+      type: "line",
+      source: "parcel-tiles",
+      "source-layer": cfg.tilesLayer,
+      minzoom: 13,
+      layout: { visibility: "none" },
+      paint: { "line-color": "#ff7a1a", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.3, 17, 1.1], "line-opacity": 0.85 },
+    });
+  }
+
+  function riskLayerIds(L) {
+    return L.kind === "raster" ? [`risk-${L.id}`] : L.layers.map((_, i) => `risk-${L.id}-${i}`);
+  }
+
+  function ensureRiskLayer(L) {
+    if (map.getSource(`risk-${L.id}`)) return;
+    if (L.kind === "raster") {
+      map.addSource(`risk-${L.id}`, {
+        type: "raster",
+        tiles: [L.tiles],
+        tileSize: 256,
+        maxzoom: L.maxzoom,
+      });
+      map.addLayer({ id: `risk-${L.id}`, type: "raster", source: `risk-${L.id}`, minzoom: L.minzoom, paint: L.paint }, riskBeforeId());
+      return;
+    }
+    map.addSource(`risk-${L.id}`, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    L.layers.forEach((spec, i) => {
+      map.addLayer({
+        id: `risk-${L.id}-${i}`,
+        source: `risk-${L.id}`,
+        minzoom: Math.max(L.minzoom, spec.minzoom || 0),
+        ...spec,
+      }, spec.type === "symbol" ? undefined : riskBeforeId());
+    });
+  }
+
+  // Overlays sit above the parcel fill but beneath the county choropleth
+  // (which only matters zoomed out) and every signal pin layer added later.
+  function riskBeforeId() {
+    return map.getLayer("counties-fill") ? "counties-fill" : undefined;
+  }
+
+  function setRiskVisible(L, on) {
+    if (on) ensureRiskLayer(L);
+    riskLayerIds(L).forEach((id) => {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+    });
+  }
+
+  const riskLoads = {};
+  async function loadRiskLayer(L) {
+    if (map.getZoom() < L.minzoom) return;
+    const b = map.getBounds();
+    const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((n) => +n.toFixed(5));
+    if ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) > 1.5) return;
+    riskLoads[L.id]?.abort();
+    const ctrl = (riskLoads[L.id] = new AbortController());
+    busy(true);
+    try {
+      const geojson = await window.DIRT_RISK.layer(L.id, bbox, ctrl.signal);
+      if (riskState.on.has(L.id)) map.getSource(`risk-${L.id}`)?.setData(geojson);
+    } catch (err) {
+      if (err.name !== "AbortError") console.error(err);
+    } finally {
+      busy(false);
+    }
+  }
+
+  function riskLayersChanged() {
+    const active = RISK_LAYERS.filter((L) => riskState.on.has(L.id));
+    const badge = document.getElementById("layers-badge");
+    badge.textContent = active.length ? String(active.length) : "";
+
+    const legend = document.getElementById("legend-risk");
+    legend.classList.toggle("hidden", !active.length);
+    const z = map.getZoom();
+    document.getElementById("legend-risk-body").innerHTML = active.map((L) => `
+      <div class="risk-legend-group">
+        <h3>${L.icon} ${esc(L.label)}${z < L.minzoom ? ` <span class="zoom-note">zoom in</span>` : ""}</h3>
+        <ul>${L.legend.map((r) => `<li><span class="swatch" style="${r.swatch}"></span>${esc(r.text)}</li>`).join("")}</ul>
+        <div class="risk-src">${esc(L.src)}</div>
+      </div>`).join("");
+
+    // Mute the owner-status colors so overlays read cleanly; bring in lot lines.
+    const anyOn = active.length > 0 || riskState.satellite;
+    map.setPaintProperty("parcels", "fill-opacity", anyOn
+      ? ["case", ["boolean", ["feature-state", "hover"], false], 0.45, riskState.satellite ? 0 : 0.12]
+      : ["case", ["boolean", ["feature-state", "hover"], false], 0.9, 0.5]);
+    map.setLayoutProperty("parcel-lines", "visibility", anyOn ? "visible" : "none");
+  }
+
+  // Esri World Imagery under the labels, for the aerial look of fire /
+  // powerline / flood checks.
+  function setSatellite(on) {
+    riskState.satellite = on;
+    if (on && !map.getSource("satellite")) {
+      map.addSource("satellite", {
+        type: "raster",
+        tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
+      });
+      const firstSymbol = map.getStyle().layers.find((l) => l.type === "symbol");
+      map.addLayer({ id: "satellite", type: "raster", source: "satellite" }, firstSymbol && firstSymbol.id);
+    }
+    if (map.getLayer("satellite")) map.setLayoutProperty("satellite", "visibility", on ? "visible" : "none");
+    riskLayersChanged();
+  }
+
+  // ---- 8-point due-diligence check for a clicked spot ------------------
+
+  // Aircraft noise has no query service, so read the pixel under the point
+  // from the same US DOT tile the map draws (z12 is its finest level).
+  async function noiseCheck(lngLat) {
+    const z = 12, n = 2 ** z;
+    const fx = (lngLat.lng + 180) / 360 * n;
+    const lat = lngLat.lat * Math.PI / 180;
+    const fy = (1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n;
+    const tile = await decodeTile(
+      `https://geo.dot.gov/server/rest/services/Hosted/NTAD_Noise_2020_CONUS_Aviation/MapServer/tile/${z}/${Math.floor(fy)}/${Math.floor(fx)}`);
+    const clear = { status: "clear", detail: "Outside mapped aircraft-noise contours (under 45 dB)" };
+    if (!tile) return clear;
+    const { img } = tile;
+    const i = (Math.floor((fy % 1) * img.height) * img.width + Math.floor((fx % 1) * img.width)) * 4;
+    if (img.data[i + 3] < 20) return clear;
+    const [, db] = nearestNoiseBin(img.data[i], img.data[i + 1], img.data[i + 2]);
+    return { status: db === "45–50" ? "info" : "hit", detail: `${db} dB average aircraft noise` };
+  }
+
+  async function riskCheckPopup(popup, lngLat) {
+    const el = popup.getElement()?.querySelector(".dd-check");
+    if (!el) return;
+    try {
+      const [{ checks }, noise] = await Promise.all([
+        window.DIRT_RISK.checks(lngLat.lng, lngLat.lat),
+        noiseCheck(lngLat).catch(() => null),
+      ]);
+      const byId = Object.fromEntries(checks.map((c) => [c.id, c]));
+      byId.noise = noise || { status: "na", detail: "Noise map didn't respond" };
+      el.innerHTML = `<div class="dd-check-title">8-point due diligence</div><ol>` +
+        RISK_LAYERS.map((L) => {
+          const c = byId[L.id] || { status: "na", detail: "No data" };
+          const mark = { hit: "⚠️", clear: "✅", info: "ℹ️" }[c.status] || "➖";
+          return `<li class="dd-${c.status}"><span>${mark}</span><span><b>${esc(L.label)}</b> — ${esc(c.detail)}</span></li>`;
+        }).join("") + `</ol>`;
+    } catch (err) {
+      el.textContent = "Due-diligence check unavailable right now.";
+    }
+  }
 
   const DCAD_SIGNAL_IDS = ["teardown", "over65", "absentee-dcad", "deferred"];
   const DCAD_SIGNAL_PARAM = { teardown: "teardown", over65: "over65", "absentee-dcad": "absentee", deferred: "deferred" };
